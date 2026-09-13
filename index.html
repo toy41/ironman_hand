@@ -3,49 +3,44 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>VisionHand Platformu</title>
+    <title>Mobil Vizör Efekti</title>
+    <!-- MediaPipe JS Kütüphaneleri -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
     <style>
-        body { margin: 0; padding: 0; background-color: black; overflow: hidden; font-family: 'Courier New', Courier, monospace; color: white; }
+        body { margin: 0; padding: 0; background-color: black; overflow: hidden; font-family: 'Courier New', Courier, monospace; }
         canvas { display: block; width: 100vw; height: 100vh; object-fit: cover; transform: scaleX(-1); }
         video { display: none; }
         
-        #menu-container {
-            position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
-            background: rgba(0, 0, 0, 0.9); display: flex; flex-direction: column;
-            justify-content: center; align-items: center; z-index: 100;
-        }
-        h1 { color: #00ffff; text-shadow: 0 0 10px #00ffff; margin-bottom: 10px; font-size: 24px; text-align: center; }
-        p { color: #aaa; font-size: 14px; margin-bottom: 30px; }
-        .menu-btn {
-            background: linear-gradient(45deg, #111, #333); border: 2px solid #00ffff;
-            color: #00ffff; padding: 15px 30px; margin: 10px; font-size: 16px;
-            font-weight: bold; border-radius: 8px; cursor: pointer; width: 80%; max-width: 300px; text-align: center;
-        }
-        .menu-btn:active { background: #00ffff; color: black; }
-        #back-btn {
-            position: absolute; top: 20px; left: 20px; background: rgba(255,0,0,0.7);
-            border: none; color: white; padding: 8px 15px; border-radius: 5px; font-weight: bold; z-index: 50; display: none; cursor: pointer;
-        }
+        /* ARAYÜZDEKİ NEON İMZA (HUD) */
         #hud-signature {
-            position: absolute; bottom: 25px; right: 20px; color: #00ffff;
-            text-shadow: 0 0 5px #00ffff; font-size: 16px; text-align: right; z-index: 10; pointer-events: none; opacity: 0.85; font-weight: bold; display: none;
+            position: absolute;
+            bottom: 25px;
+            right: 20px;
+            color: #00ffff;
+            text-shadow: 0 0 5px #00ffff, 0 0 10px #00ffff;
+            font-size: 16px;
+            text-align: right;
+            z-index: 10;
+            pointer-events: none;
+            opacity: 0.85;
+            letter-spacing: 2px;
+            font-weight: bold;
+        }
+        #hud-signature span {
+            font-size: 10px;
+            color: #ffffff;
+            text-shadow: none;
+            letter-spacing: 1px;
         }
     </style>
 </head>
 <body>
-    <div id="menu-container">
-        <h1>VISIONHAND.ONLINE</h1>
-        <p>Lütfen bir mod seçin:</p>
-        <button class="menu-btn" onclick="startMode('vizor')">1. Vizör & SS Modu</button>
-        <button class="menu-btn" onclick="startMode('sim')">2. Simülasyon Modu (Gelişmiş)</button>
-        <div style="margin-top: 40px; font-size: 11px; color: #666;">DEVELOPED BY TOYGUN GALYAN</div>
+    <!-- Ekranda Görünen Havalı Yazı -->
+    <div id="hud-signature">
+        <span>DEVELOPED BY</span><br>
+        TOYGUN GALYAN
     </div>
-
-    <button id="back-btn" onclick="goBackToMenu()">← Menüye Dön</button>
-    <div id="hud-signature"><span>DEVELOPED BY</span><br>TOYGUN GALYAN</div>
 
     <video id="video" autoplay playsinline></video>
     <canvas id="canvas"></canvas>
@@ -55,263 +50,117 @@
         const canvasElement = document.getElementById('canvas');
         const canvasCtx = canvasElement.getContext('2d');
 
-        let currentMode = null;
-        let flashFrames = 0, lastPicTime = 0;
-
-        // --- SİGARA VE DUMAN DEĞİŞKENLERİ ---
-        const CIG_MAX_LEN = 130;
-        const CIG_MIN_LEN = 34;
-        let cigLength = CIG_MAX_LEN;
-        let cigAttachedTo = "mouth";
-        let emberGlow = 0.25;
-        let particles = [];
-        let burnedOutSince = null;
-
-        function startMode(mode) {
-            currentMode = mode;
-            document.getElementById('menu-container').style.display = 'none';
-            document.getElementById('back-btn').style.display = 'block';
-            if(mode === 'vizor' || mode === 'sim') {
-                document.getElementById('hud-signature').style.display = 'block';
-            }
-            startCameraAndLoop();
-        }
-
-        function goBackToMenu() {
-            currentMode = null;
-            document.getElementById('menu-container').style.display = 'flex';
-            document.getElementById('hud-signature').style.display = 'none';
-            document.getElementById('back-btn').style.display = 'none';
-            window.location.reload();
-        }
+        let flashFrames = 0;
+        let lastPicTime = 0;
+        let prevX1=0, prevY1=0, prevX2=0, prevY2=0;
+        const smoothing = 0.6;
 
         function isFist(landmarks) {
-            const tips = [8, 12, 16, 20], dips = [6, 10, 14, 18];
+            const tips = [8, 12, 16, 20];
+            const dips = [6, 10, 14, 18];
             let curled = 0;
-            for(let i=0; i<4; i++) if(landmarks[tips[i]].y > landmarks[dips[i]].y) curled++;
+            for(let i=0; i<4; i++) {
+                if(landmarks[tips[i]].y > landmarks[dips[i]].y) curled++;
+            }
             return curled >= 3;
         }
 
-        class SmokeParticle {
-            constructor(x, y) {
-                this.x = x + (Math.random() - 0.5) * 8;
-                this.y = y + (Math.random() - 0.5) * 6;
-                this.vx = (Math.random() - 0.5) * 1.0;
-                this.vy = -1.2 - Math.random() * 0.8;
-                this.radius = 10 + Math.random() * 8;
-                this.alpha = 0.6;
-                this.maxAge = 70;
-                this.age = 0;
-            }
-            update() {
-                this.age++;
-                this.x += this.vx;
-                this.y += this.vy;
-                this.vx += (Math.random() - 0.5) * 0.1;
-                this.vy -= 0.005;
-                this.radius += 0.55;
-                let lifeRatio = this.age / this.maxAge;
-                this.alpha = Math.max(0, (1.0 - lifeRatio) * 0.7);
-            }
-            isDead() {
-                return this.age >= this.maxAge || this.alpha <= 0.02;
-            }
-        }
-
-        // --- SİMÜLASYON ÇİZİM FONKSİYONU ---
-        function drawSimulation(results, w, h) {
-            let mouthX = w * 0.5, mouthY = h * 0.6;
-            let handX = null, handY = null, isPinching = false;
-
-            if (results && results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                const hand = results.multiHandLandmarks[0];
-                let ix = hand[8].x * w, iy = hand[8].y * h;
-                let tx = hand[4].x * w, ty = hand[4].y * h;
-                
-                handX = ix;
-                handY = iy;
-                
-                let pinchDist = Math.hypot(tx - ix, ty - iy);
-                isPinching = (pinchDist < 50);
-            }
-
-            let distToMouth = Math.hypot(mouthX - (handX || mouthX), mouthY - (handY || mouthY));
-            
-            if (cigAttachedTo === "mouth") {
-                if (isPinching && handX !== null && distToMouth < 120) {
-                    cigAttachedTo = "hand";
-                }
-            } else if (cigAttachedTo === "hand") {
-                if (!isPinching || distToMouth < 60) {
-                    cigAttachedTo = "mouth";
-                }
-            }
-
-            let cigX = mouthX, cigY = mouthY;
-            let angle = -10;
-
-            if (cigAttachedTo === "hand" && handX !== null) {
-                cigX = handX;
-                cigY = handY;
-                angle = -25;
-            }
-
-            // Yanma Mantığı
-            let isInhaling = distToMouth < 75;
-            if (isInhaling && cigLength > CIG_MIN_LEN) {
-                cigLength -= 0.35;
-                emberGlow = Math.min(1.0, emberGlow + 0.1);
-            } else {
-                emberGlow = Math.max(0.15, emberGlow - 0.05);
-            }
-
-            if (cigLength <= CIG_MIN_LEN) {
-                if (!burnedOutSince) burnedOutSince = Date.now();
-                else if (Date.now() - burnedOutSince > 2200) {
-                    cigLength = CIG_MAX_LEN;
-                    burnedOutSince = null;
-                    cigAttachedTo = "mouth";
-                }
-            }
+        function onResults(results) {
+            canvasElement.width = videoElement.videoWidth;
+            canvasElement.height = videoElement.videoHeight;
+            const w = canvasElement.width;
+            const h = canvasElement.height;
 
             canvasCtx.save();
-            canvasCtx.translate(cigX, cigY);
-            canvasCtx.rotate(angle * Math.PI / 180);
-            
-            canvasCtx.fillStyle = "#e0e0e0";
-            canvasCtx.fillRect(0, -5, cigLength, 10);
-            canvasCtx.strokeStyle = "#999";
-            canvasCtx.lineWidth = 1;
-            canvasCtx.strokeRect(0, -5, cigLength, 10);
+            canvasCtx.clearRect(0, 0, w, h);
 
-            canvasCtx.fillStyle = "#2a52be";
-            canvasCtx.fillRect(0, -5, 30, 10);
+            canvasCtx.drawImage(results.image, 0, 0, w, h);
 
-            canvasCtx.fillStyle = "#ff4500";
-            canvasCtx.beginPath();
-            canvasCtx.arc(cigLength, 0, 5, 0, 2 * Math.PI);
-            canvasCtx.fill();
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length === 2) {
+                const hand1 = results.multiHandLandmarks[0];
+                const hand2 = results.multiHandLandmarks[1];
+
+                const fist1 = isFist(hand1);
+                const fist2 = isFist(hand2);
+
+                let x1 = hand1[9].x * w; let y1 = hand1[9].y * h;
+                let x2 = hand2[9].x * w; let y2 = hand2[9].y * h;
+
+                let startX = Math.min(x1, x2);
+                let startY = Math.min(y1, y2);
+                let endX = Math.max(x1, x2);
+                let endY = Math.max(y1, y2);
+
+                if (prevX1 === 0) {
+                    prevX1 = startX; prevY1 = startY; prevX2 = endX; prevY2 = endY;
+                } else {
+                    startX = prevX1 * smoothing + startX * (1 - smoothing);
+                    startY = prevY1 * smoothing + startY * (1 - smoothing);
+                    endX = prevX2 * smoothing + endX * (1 - smoothing);
+                    endY = prevY2 * smoothing + endY * (1 - smoothing);
+                }
+                prevX1 = startX; prevY1 = startY; prevX2 = endX; prevY2 = endY;
+
+                let boxW = endX - startX;
+                let boxH = endY - startY;
+
+                if (boxW > 0 && boxH > 0) {
+                    canvasCtx.save();
+                    canvasCtx.beginPath();
+                    canvasCtx.rect(startX, startY, boxW, boxH);
+                    canvasCtx.clip();
+                    canvasCtx.filter = 'grayscale(100%)';
+                    canvasCtx.drawImage(results.image, 0, 0, w, h);
+                    canvasCtx.restore();
+
+                    canvasCtx.lineWidth = (fist1 && fist2) ? 6 : 4;
+                    canvasCtx.strokeStyle = (fist1 && fist2) ? 'red' : 'yellow';
+                    canvasCtx.strokeRect(startX, startY, boxW, boxH);
+
+                    const now = Date.now();
+                    if (fist1 && fist2 && (now - lastPicTime > 2000)) {
+                        flashFrames = 4;
+                        lastPicTime = now;
+                        
+                        const tempCanvas = document.createElement('canvas');
+                        tempCanvas.width = boxW; tempCanvas.height = boxH;
+                        const tCtx = tempCanvas.getContext('2d');
+                        tCtx.drawImage(canvasElement, startX, startY, boxW, boxH, 0, 0, boxW, boxH);
+                        
+                        // FOTOĞRAFA EKLENEN İMZA (FILIGRAN)
+                        tCtx.font = "bold 18px Courier New";
+                        tCtx.fillStyle = "rgba(0, 255, 255, 0.9)";
+                        tCtx.textAlign = "right";
+                        tCtx.fillText("by Toygun Galyan", boxW - 15, boxH - 15);
+                        
+                        const link = document.createElement('a');
+                        link.download = `ironman_vizor_${now}.jpg`;
+                        link.href = tempCanvas.toDataURL('image/jpeg');
+                        link.click();
+                    }
+                }
+            } else {
+                prevX1 = 0; 
+            }
+
+            if (flashFrames > 0) {
+                canvasCtx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                canvasCtx.fillRect(0, 0, w, h);
+                flashFrames--;
+            }
             canvasCtx.restore();
-
-            let tipRad = angle * Math.PI / 180;
-            let tipX = cigX + Math.cos(tipRad) * cigLength;
-            let tipY = cigY + Math.sin(tipRad) * cigLength;
-
-            if (isInhaling || Math.random() < 0.3) {
-                particles.push(new SmokeParticle(tipX, tipY));
-            }
-
-            for (let i = particles.length - 1; i >= 0; i--) {
-                particles[i].update();
-                canvasCtx.fillStyle = `rgba(220, 220, 220, ${particles[i].alpha})`;
-                canvasCtx.beginPath();
-                canvasCtx.arc(particles[i].x, particles[i].y, particles[i].radius, 0, 2 * Math.PI);
-                canvasCtx.fill();
-                if (particles[i].isDead()) particles.splice(i, 1);
-            }
-
-            canvasCtx.fillStyle = "#00ffff";
-            canvasCtx.font = "bold 18px Courier New";
-            canvasCtx.fillText(`SİMÜLASYON AKTİF | Durum: ${cigAttachedTo.toUpperCase()}`, 20, 50);
         }
 
-        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-        hands.setOptions({ 
-            maxNumHands: 2,
-            modelComplexity: 0,
-            minDetectionConfidence: 0.5, 
-            minTrackingConfidence: 0.5 
+        const hands = new Hands({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+        }});
+        hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
+        hands.onResults(onResults);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => { await hands.send({image: videoElement}); },
+            width: 1280, height: 720, facingMode: 'user'
         });
-
-        let latestResults = null;
-        let frameCount = 0;
-
-        hands.onResults = (results) => {
-            latestResults = results;
-        };
-
-        async function mainLoop() {
-            if (currentMode && videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
-                canvasElement.width = videoElement.videoWidth;
-                canvasElement.height = videoElement.videoHeight;
-                const w = canvasElement.width;
-                const h = canvasElement.height;
-
-                canvasCtx.save();
-                canvasCtx.clearRect(0, 0, w, h);
-                canvasCtx.drawImage(videoElement, 0, 0, w, h);
-                canvasCtx.restore();
-
-                // Her 2 karede bir yapay zekaya göndererek donmaları kesin olarak önleyelim
-                frameCount++;
-                if (frameCount % 2 === 0) {
-                    try {
-                        await hands.send({ image: videoElement });
-                    } catch (e) {
-                        console.error("AI Hatası:", e);
-                    }
-                }
-
-                // 1. VİZÖR & SS MODU
-                if (currentMode === 'vizor' && latestResults && latestResults.multiHandLandmarks && latestResults.multiHandLandmarks.length === 2) {
-                    const hand1 = latestResults.multiHandLandmarks[0], hand2 = latestResults.multiHandLandmarks[1];
-                    const fist1 = isFist(hand1), fist2 = isFist(hand2);
-                    let x1 = hand1[9].x * w, y1 = hand1[9].y * h;
-                    let x2 = hand2[9].x * w, y2 = hand2[9].y * h;
-                    let startX = Math.min(x1, x2), startY = Math.min(y1, y2);
-                    let endX = Math.max(x1, x2), endY = Math.max(y1, y2);
-                    let boxW = endX - startX, boxH = endY - startY;
-
-                    if (boxW > 0 && boxH > 0) {
-                        canvasCtx.save();
-                        canvasCtx.beginPath(); canvasCtx.rect(startX, startY, boxW, boxH); canvasCtx.clip();
-                        canvasCtx.filter = 'grayscale(100%)';
-                        canvasCtx.drawImage(videoElement, 0, 0, w, h);
-                        canvasCtx.restore();
-
-                        canvasCtx.lineWidth = (fist1 && fist2) ? 6 : 4;
-                        canvasCtx.strokeStyle = (fist1 && fist2) ? 'red' : 'yellow';
-                        canvasCtx.strokeRect(startX, startY, boxW, boxH);
-
-                        const now = Date.now();
-                        if (fist1 && fist2 && (now - lastPicTime > 2000)) {
-                            flashFrames = 4; lastPicTime = now;
-                            const tempCanvas = document.createElement('canvas');
-                            tempCanvas.width = boxW; tempCanvas.height = boxH;
-                            const tCtx = tempCanvas.getContext('2d');
-                            tCtx.drawImage(canvasElement, startX, startY, boxW, boxH, 0, 0, boxW, boxH);
-                            tCtx.font = "bold 18px Courier New"; tCtx.fillStyle = "rgba(0, 255, 255, 0.9)";
-                            tCtx.textAlign = "right"; tCtx.fillText("by Toygun Galyan", boxW - 15, boxH - 15);
-                            const link = document.createElement('a');
-                            link.download = `visionhand_${now}.jpg`; link.href = tempCanvas.toDataURL('image/jpeg'); link.click();
-                        }
-                    }
-                    if (flashFrames > 0) {
-                        canvasCtx.fillStyle = 'rgba(255, 255, 255, 0.9)'; canvasCtx.fillRect(0, 0, w, h); flashFrames--;
-                    }
-                }
-
-                // 2. SİMÜLASYON MODU
-                if (currentMode === 'sim' && latestResults) {
-                    drawSimulation(latestResults, w, h);
-                }
-            }
-            requestAnimationFrame(mainLoop);
-        }
-
-        async function startCameraAndLoop() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { width: 640, height: 480, facingMode: 'user' }
-                });
-                videoElement.srcObject = stream;
-                await videoElement.play();
-                requestAnimationFrame(mainLoop);
-            } catch (err) {
-                console.error("Kamera hatası:", err);
-                alert("Kamera açılamadı!");
-            }
-        }
+        camera.start();
     </script>
-</body>
-</html>
+</body> 
