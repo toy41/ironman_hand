@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Efekt Paneli - Toygun Galyan</title>
-    <!-- MediaPipe ve Kamera Kütüphaneleri CDN Bağlantıları -->
+    <!-- MediaPipe ve Kamera Kütüphaneleri -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
@@ -27,9 +27,7 @@
     <div class="container">
         <h2>Iron Man & Duman AI Paneli</h2>
         <div class="video-container">
-            <!-- Kamera akışı için video elementi -->
             <video id="webcam" autoplay playsinline muted style="display:none;"></video>
-            <!-- Efektlerin işleneceği tuval -->
             <canvas id="output_canvas" width="640" height="480"></canvas>
         </div>
         <div class="btn-group">
@@ -52,6 +50,8 @@
 
         function changeFilter(filterName) {
             activeFilter = filterName;
+            latestHands = null;
+            latestFace = null;
             document.querySelectorAll('.btn-group button').forEach(btn => btn.classList.remove('active'));
             if(filterName === "vizor") document.getElementById('btn-vizor').classList.add('active');
             if(filterName === "smoke") document.getElementById('btn-smoke').classList.add('active');
@@ -79,7 +79,7 @@
             }
         }
 
-        // Yumruk kontrolü için eksik dizi indeksleri eklendi
+        // Yumruk kontrolü için eksik diziler eklendi
         function checkFist(landmarks) {
             const fingertips = [8, 12, 16, 20];
             const fingerDips = [6, 10, 14, 18];
@@ -92,23 +92,15 @@
             return curled >= 3;
         }
 
-        // --- MEDIAPIPE TETİKLEYİCİLERİ ---
-        function onHandsResults(results) { 
-            latestHands = results; 
-            drawCombined(); 
-        }
-        
-        function onFaceResults(results) { 
-            latestFace = results; 
-            drawCombined(); 
-        }
+        function onHandsResults(results) { latestHands = results; }
+        function onFaceResults(results) { latestFace = results; }
 
-        // --- ANA ÇİZİM MOTORU ---
-        function drawCombined() {
+        // --- AKICI ÇİZİM DÖNGÜSÜ (60 FPS DÖNGÜSÜ) ---
+        function renderLoop() {
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
             canvasCtx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
 
-            // 1. Durum: Iron Man Vizör
+            // 1. IRON MAN VIZOR EFEKTİ
             if ((activeFilter === "vizor" || activeFilter === "both") && latestHands && latestHands.multiHandLandmarks && latestHands.multiHandLandmarks.length === 2) {
                 let h1 = latestHands.multiHandLandmarks[0];
                 let h2 = latestHands.multiHandLandmarks[1];
@@ -146,7 +138,7 @@
                 }
             }
 
-            // 2. Durum: Sigara ve Duman
+            // 2. SİGARA & DUMAN EFEKTİ
             if ((activeFilter === "smoke" || activeFilter === "both") && latestFace && latestFace.multiFaceLandmarks && latestFace.multiFaceLandmarks.length > 0) {
                 let landmarks = latestFace.multiFaceLandmarks[0];
                 let mouthX = ((landmarks[13].x + landmarks[14].x) / 2) * canvasElement.width;
@@ -179,7 +171,7 @@
                 }
             }
 
-            // Partikülleri ekranda güncelle ve çiz
+            // Duman partiküllerini ekrana bas
             for (let i = particles.length - 1; i >= 0; i--) {
                 let p = particles[i];
                 p.update();
@@ -195,9 +187,11 @@
                 canvasCtx.fill();
                 canvasCtx.restore();
             }
+
+            requestAnimationFrame(renderLoop);
         }
 
-        // --- MEDIAPIPE BAĞLANTILARI VE BAŞLATMA ---
+        // --- MEDIAPIPE KURULUMLARI VE AKILLI İŞLEMCİ YÖNETİMİ ---
         const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
         hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
         hands.onResults(onHandsResults);
@@ -212,15 +206,23 @@
                     canvasElement.width = videoElement.videoWidth;
                     canvasElement.height = videoElement.videoHeight;
                 }
-                if (activeFilter === "vizor" || activeFilter === "both") await hands.send({ image: videoElement });
-                if (activeFilter === "smoke" || activeFilter === "both") await faceMesh.send({ image: videoElement });
+                // AKILLI SİSTEM: Sadece aktif olan filtre işlemciyi çalıştırır, donmayı önler!
+                if (activeFilter === "vizor") {
+                    await hands.send({ image: videoElement });
+                } else if (activeFilter === "smoke") {
+                    await faceMesh.send({ image: videoElement });
+                } else if (activeFilter === "both") {
+                    await hands.send({ image: videoElement });
+                    await faceMesh.send({ image: videoElement });
+                }
             },
             width: 640, height: 480
         });
 
-        // Sayfa yüklendiğinde kamerayı başlat
         window.addEventListener('DOMContentLoaded', () => {
-            camera.start().catch(err => console.log("Kamera başlatılamadı: ", err));
+            camera.start().then(() => {
+                requestAnimationFrame(renderLoop);
+            }).catch(err => console.log("Kamera hatası: ", err));
         });
     </script>
 </body>
