@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Iron Man & Duman AI Paneli - Toygun Galyan</title>
-    <!-- MediaPipe ve Kamera Kütüphaneleri -->
+    <title>AI Efekt Paneli - Toygun Galyan</title>
+    <!-- MediaPipe ve Kamera Kütüphaneleri CDN Bağlantıları -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
@@ -13,7 +13,7 @@
         body { background-color: #121212; color: #e0e0e0; font-family: sans-serif; text-align: center; margin: 0; padding: 20px; }
         h2 { color: #ffeb3b; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 20px; }
         .container { max-width: 700px; margin: 0 auto; background: #1e1e1e; padding: 20px; border-radius: 15px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
-        .video-container { position: relative; width: 100%; max-width: 600px; margin: 0 auto; border: 2px solid #ffeb3b; border-radius: 10px; overflow: hidden; background: #000; }
+        .video-container { position: relative; width: 100%; max-width: 600px; min-height: 400px; margin: 0 auto; border: 2px solid #ffeb3b; border-radius: 10px; overflow: hidden; background: #000; }
         video, canvas { width: 100%; height: auto; display: block; }
         canvas { position: absolute; top: 0; left: 0; }
         .btn-group { margin-top: 20px; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
@@ -27,7 +27,9 @@
     <div class="container">
         <h2>Iron Man & Duman AI Paneli</h2>
         <div class="video-container">
-            <video id="webcam" autoplay playsinline style="display:none;"></video>
+            <!-- Kamera akışı için video elementi -->
+            <video id="webcam" autoplay playsinline muted style="display:none;"></video>
+            <!-- Efektlerin işleneceği tuval -->
             <canvas id="output_canvas" width="640" height="480"></canvas>
         </div>
         <div class="btn-group">
@@ -45,6 +47,8 @@
         
         let activeFilter = "vizor";
         let particles = [];
+        let latestHands = null;
+        let latestFace = null;
 
         function changeFilter(filterName) {
             activeFilter = filterName;
@@ -75,7 +79,7 @@
             }
         }
 
-        // Yumruk kontrol fonksiyonu (Parmak uçları ve boğum kıyaslaması)
+        // Yumruk kontrolü için eksik dizi indeksleri eklendi
         function checkFist(landmarks) {
             const fingertips = [8, 12, 16, 20];
             const fingerDips = [6, 10, 14, 18];
@@ -88,17 +92,23 @@
             return curled >= 3;
         }
 
-        let latestHands = null;
-        let latestFace = null;
+        // --- MEDIAPIPE TETİKLEYİCİLERİ ---
+        function onHandsResults(results) { 
+            latestHands = results; 
+            drawCombined(); 
+        }
+        
+        function onFaceResults(results) { 
+            latestFace = results; 
+            drawCombined(); 
+        }
 
-        function onHandsResults(results) { latestHands = results; drawCombined(); }
-        function onFaceResults(results) { latestFace = results; drawCombined(); }
-
+        // --- ANA ÇİZİM MOTORU ---
         function drawCombined() {
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
             canvasCtx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
 
-            // 1. IRON MAN VIZOR EFEKTİ
+            // 1. Durum: Iron Man Vizör
             if ((activeFilter === "vizor" || activeFilter === "both") && latestHands && latestHands.multiHandLandmarks && latestHands.multiHandLandmarks.length === 2) {
                 let h1 = latestHands.multiHandLandmarks[0];
                 let h2 = latestHands.multiHandLandmarks[1];
@@ -136,7 +146,7 @@
                 }
             }
 
-            // 2. SİGARA & DUMAN EFEKTİ
+            // 2. Durum: Sigara ve Duman
             if ((activeFilter === "smoke" || activeFilter === "both") && latestFace && latestFace.multiFaceLandmarks && latestFace.multiFaceLandmarks.length > 0) {
                 let landmarks = latestFace.multiFaceLandmarks[0];
                 let mouthX = ((landmarks[13].x + landmarks[14].x) / 2) * canvasElement.width;
@@ -169,7 +179,7 @@
                 }
             }
 
-            // Partikülleri güncelle ve çiz
+            // Partikülleri ekranda güncelle ve çiz
             for (let i = particles.length - 1; i >= 0; i--) {
                 let p = particles[i];
                 p.update();
@@ -187,7 +197,7 @@
             }
         }
 
-        // --- MEDIAPIPE BAĞLANTILARI ---
+        // --- MEDIAPIPE BAĞLANTILARI VE BAŞLATMA ---
         const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
         hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
         hands.onResults(onHandsResults);
@@ -204,11 +214,14 @@
                 }
                 if (activeFilter === "vizor" || activeFilter === "both") await hands.send({ image: videoElement });
                 if (activeFilter === "smoke" || activeFilter === "both") await faceMesh.send({ image: videoElement });
-                if (activeFilter === "vizor" && (!latestHands || latestHands.multiHandLandmarks.length < 2)) drawCombined();
             },
             width: 640, height: 480
         });
-        camera.start();
+
+        // Sayfa yüklendiğinde kamerayı başlat
+        window.addEventListener('DOMContentLoaded', () => {
+            camera.start().catch(err => console.log("Kamera başlatılamadı: ", err));
+        });
     </script>
 </body>
 </html>
