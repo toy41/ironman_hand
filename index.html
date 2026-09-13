@@ -58,11 +58,11 @@
         let currentMode = null;
         let flashFrames = 0, lastPicTime = 0;
 
-        // --- PYTHON TARZI GELİŞMİŞ SİGARA VE DUMAN SİSTEMİ DEĞİŞKENLERİ ---
+        // --- SİGARA VE DUMAN DEĞİŞKENLERİ ---
         const CIG_MAX_LEN = 130;
         const CIG_MIN_LEN = 34;
         let cigLength = CIG_MAX_LEN;
-        let cigAttachedTo = "mouth"; // "mouth" veya "hand"
+        let cigAttachedTo = "mouth";
         let emberGlow = 0.25;
         let particles = [];
         let burnedOutSince = null;
@@ -74,7 +74,7 @@
             if(mode === 'vizor' || mode === 'sim') {
                 document.getElementById('hud-signature').style.display = 'block';
             }
-            startCameraAndLoop(); // Kamera doğru fonksiyonla başlatılıyor
+            startCameraAndLoop();
         }
 
         function goBackToMenu() {
@@ -118,32 +118,152 @@
             }
         }
 
-        function onResults(results) {
-            if (videoElement.videoWidth === 0 || videoElement.videoHeight === 0) return;
-            canvasElement.width = videoElement.videoWidth;
-            canvasElement.height = videoElement.videoHeight;
-            const w = canvasElement.width;
-            const h = canvasElement.height;
+        // --- SİMÜLASYON ÇİZİM FONKSİYONU ---
+        function drawSimulation(results, w, h) {
+            let mouthX = w * 0.5, mouthY = h * 0.55;
+            let handX = null, handY = null, isPinching = false;
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const hand = results.multiHandLandmarks[0];
+                let ix = hand[8].x * w, iy = hand[8].y * h;
+                let tx = hand[4].x * w, ty = hand[4].y * h;
+                let mx = hand[12].x * w, my = hand[12].y * h;
+
+                let distThumbIndex = Math.hypot(tx - ix, ty - iy);
+                let distIndexMiddle = Math.hypot(ix - mx, iy - my);
+
+                if (distIndexMiddle < distThumbIndex && distIndexMiddle < 55) {
+                    isPinching = true;
+                    handX = (ix + mx) / 2; handY = (iy + my) / 2;
+                } else if (distThumbIndex < 55) {
+                    isPinching = true;
+                    handX = (tx + ix) / 2; handY = (ty + iy) / 2;
+                } else {
+                    isPinching = false;
+                    handX = ix; handY = iy;
+                }
+            }
+
+            let distToMouth = Math.hypot(mouthX - (handX || 0), mouthY - (handY || 0));
+            if (cigAttachedTo === "mouth") {
+                if (isPinching && handX !== null && distToMouth < 150) {
+                    cigAttachedTo = "hand";
+                }
+            } else if (cigAttachedTo === "hand") {
+                if (!isPinching && distToMouth < 70) {
+                    cigAttachedTo = "mouth";
+                }
+            }
+
+            let cigX = mouthX, cigY = mouthY;
+            let angle = -10;
+            if (cigAttachedTo === "hand" && handX !== null) {
+                cigX = handX; cigY = handY;
+                angle = -20;
+            }
+
+            let isInhaling = distToMouth < 75;
+            if (isInhaling && cigLength > CIG_MIN_LEN) {
+                cigLength -= 0.35;
+                emberGlow = Math.min(1.0, emberGlow + 0.1);
+            } else {
+                emberGlow = Math.max(0.15, emberGlow - 0.05);
+            }
+
+            if (cigLength <= CIG_MIN_LEN) {
+                if (!burnedOutSince) burnedOutSince = Date.now();
+                else if (Date.now() - burnedOutSince > 2200) {
+                    cigLength = CIG_MAX_LEN;
+                    burnedOutSince = null;
+                    cigAttachedTo = "mouth";
+                }
+            }
 
             canvasCtx.save();
-            canvasCtx.clearRect(0, 0, w, h);
-            canvasCtx.drawImage(results.image, 0, 0, w, h);
+            canvasCtx.translate(cigX, cigY);
+            canvasCtx.rotate(angle * Math.PI / 180);
+            
+            canvasCtx.fillStyle = "#e0e0e0";
+            canvasCtx.fillRect(0, -4.5, cigLength, 9);
+            canvasCtx.strokeStyle = "#b0b0b0";
+            canvasCtx.lineWidth = 1;
+            canvasCtx.strokeRect(0, -4.5, cigLength, 9);
 
-            if (currentMode === 'vizor') {
-                if (results.multiHandLandmarks && results.multiHandLandmarks.length === 2) {
-                    const hand1 = results.multiHandLandmarks[0], hand2 = results.multiHandLandmarks[1];
+            canvasCtx.fillStyle = "#3b6ea5";
+            canvasCtx.fillRect(0, -4.5, Math.min(28, cigLength * 0.3), 9);
+
+            let rGlow = Math.floor(50 + 130 * emberGlow);
+            let gGlow = Math.floor(80 + 100 * emberGlow);
+            let bGlow = Math.floor(150 + 105 * emberGlow);
+            canvasCtx.fillStyle = `rgb(${rGlow}, ${gGlow}, ${bGlow})`;
+            canvasCtx.beginPath(); canvasCtx.arc(cigLength, 0, 5 + 3 * emberGlow, 0, 2 * Math.PI); canvasCtx.fill();
+            canvasCtx.restore();
+
+            let tipRad = angle * Math.PI / 180;
+            let tipX = cigX + Math.cos(tipRad) * cigLength;
+            let tipY = cigY + Math.sin(tipRad) * cigLength;
+
+            if (isInhaling || Math.random() < 0.15) {
+                particles.push(new SmokeParticle(tipX, tipY));
+            }
+
+            for (let i = particles.length - 1; i >= 0; i--) {
+                particles[i].update();
+                canvasCtx.fillStyle = `rgba(200, 200, 205, ${particles[i].alpha})`;
+                canvasCtx.beginPath();
+                canvasCtx.arc(particles[i].x, particles[i].y, particles[i].radius, 0, 2 * Math.PI);
+                canvasCtx.fill();
+                if (particles[i].isDead()) particles.splice(i, 1);
+            }
+
+            canvasCtx.fillStyle = "#00ffff";
+            canvasCtx.font = "16px Courier New";
+            canvasCtx.fillText(`Mod: Gelişmiş Simülasyon (${cigAttachedTo.toUpperCase()})`, 20, 50);
+        }
+
+        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+        hands.setOptions({ 
+            maxNumHands: 1,
+            modelComplexity: 0,
+            minDetectionConfidence: 0.5, 
+            minTrackingConfidence: 0.5 
+        });
+
+        let latestResults = null;
+        let isAnalyzing = false;
+
+        hands.onResults = (results) => {
+            latestResults = results;
+            isAnalyzing = false;
+        };
+
+        async function mainLoop() {
+            if (currentMode && videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
+                canvasElement.width = videoElement.videoWidth;
+                canvasElement.height = videoElement.videoHeight;
+                const w = canvasElement.width;
+                const h = canvasElement.height;
+
+                canvasCtx.save();
+                canvasCtx.clearRect(0, 0, w, h);
+                canvasCtx.drawImage(videoElement, 0, 0, w, h);
+                canvasCtx.restore();
+
+                // Vizör Modu Çizimi
+                if (currentMode === 'vizor' && latestResults && latestResults.multiHandLandmarks && latestResults.multiHandLandmarks.length === 2) {
+                    const hand1 = latestResults.multiHandLandmarks[0], hand2 = latestResults.multiHandLandmarks[1];
                     const fist1 = isFist(hand1), fist2 = isFist(hand2);
                     let x1 = hand1[9].x * w, y1 = hand1[9].y * h;
                     let x2 = hand2[9].x * w, y2 = hand2[9].y * h;
                     let startX = Math.min(x1, x2), startY = Math.min(y1, y2);
                     let endX = Math.max(x1, x2), endY = Math.max(y1, y2);
-
                     let boxW = endX - startX, boxH = endY - startY;
+
                     if (boxW > 0 && boxH > 0) {
                         canvasCtx.save();
                         canvasCtx.beginPath(); canvasCtx.rect(startX, startY, boxW, boxH); canvasCtx.clip();
                         canvasCtx.filter = 'grayscale(100%)';
-                        canvasCtx.drawImage(results.image, 0, 0, w, h);
+                        canvasCtx.drawImage(videoElement, 0, 0, w, h);
                         canvasCtx.restore();
 
                         canvasCtx.lineWidth = (fist1 && fist2) ? 6 : 4;
@@ -163,148 +283,16 @@
                             link.download = `visionhand_${now}.jpg`; link.href = tempCanvas.toDataURL('image/jpeg'); link.click();
                         }
                     }
-                }
-                if (flashFrames > 0) {
-                    canvasCtx.fillStyle = 'rgba(255, 255, 255, 0.9)'; canvasCtx.fillRect(0, 0, w, h); flashFrames--;
-                }
-            } 
-            else if (currentMode === 'sim') {
-                let mouthX = w * 0.5, mouthY = h * 0.55;
-                let handX = null, handY = null, isPinching = false;
-
-                if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                    const hand = results.multiHandLandmarks[0];
-                    let ix = hand[8].x * w, iy = hand[8].y * h;
-                    let tx = hand[4].x * w, ty = hand[4].y * h;
-                    let mx = hand[12].x * w, my = hand[12].y * h;
-
-                    let distThumbIndex = Math.hypot(tx - ix, ty - iy);
-                    let distIndexMiddle = Math.hypot(ix - mx, iy - my);
-
-                    if (distIndexMiddle < distThumbIndex && distIndexMiddle < 55) {
-                        isPinching = true;
-                        handX = (ix + mx) / 2; handY = (iy + my) / 2;
-                    } else if (distThumbIndex < 55) {
-                        isPinching = true;
-                        handX = (tx + ix) / 2; handY = (ty + iy) / 2;
-                    } else {
-                        isPinching = false;
-                        handX = ix; handY = iy;
+                    if (flashFrames > 0) {
+                        canvasCtx.fillStyle = 'rgba(255, 255, 255, 0.9)'; canvasCtx.fillRect(0, 0, w, h); flashFrames--;
                     }
                 }
 
-                let distToMouth = Math.hypot(mouthX - (handX || 0), mouthY - (handY || 0));
-                if (cigAttachedTo === "mouth") {
-                    if (isPinching && handX !== null && distToMouth < 150) {
-                        cigAttachedTo = "hand";
-                    }
-                } else if (cigAttachedTo === "hand") {
-                    if (!isPinching && distToMouth < 70) {
-                        cigAttachedTo = "mouth";
-                    }
+                // Simülasyon Modu Çizimi
+                if (currentMode === 'sim' && latestResults) {
+                    drawSimulation(latestResults, w, h);
                 }
 
-                let cigX = mouthX, cigY = mouthY;
-                let angle = -10;
-                if (cigAttachedTo === "hand" && handX !== null) {
-                    cigX = handX; cigY = handY;
-                    angle = -20;
-                }
-
-                let isInhaling = distToMouth < 75;
-                if (isInhaling && cigLength > CIGARETTE_MIN_LEN) {
-                    cigLength -= 0.35;
-                    emberGlow = Math.min(1.0, emberGlow + 0.1);
-                } else {
-                    emberGlow = Math.max(0.15, emberGlow - 0.05);
-                }
-
-                if (cigLength <= CIGARETTE_MIN_LEN) {
-                    if (!burnedOutSince) burnedOutSince = Date.now();
-                    else if (Date.now() - burnedOutSince > 2200) {
-                        cigLength = CIG_MAX_LEN;
-                        burnedOutSince = null;
-                        cigAttachedTo = "mouth";
-                    }
-                }
-
-                canvasCtx.save();
-                canvasCtx.translate(cigX, cigY);
-                canvasCtx.rotate(angle * Math.PI / 180);
-                
-                canvasCtx.fillStyle = "#e0e0e0";
-                canvasCtx.fillRect(0, -4.5, cigLength, 9);
-                canvasCtx.strokeStyle = "#b0b0b0";
-                canvasCtx.lineWidth = 1;
-                canvasCtx.strokeRect(0, -4.5, cigLength, 9);
-
-                canvasCtx.fillStyle = "#3b6ea5";
-                canvasCtx.fillRect(0, -4.5, Math.min(28, cigLength * 0.3), 9);
-
-                let rGlow = Math.floor(50 + 130 * emberGlow);
-                let gGlow = Math.floor(80 + 100 * emberGlow);
-                let bGlow = Math.floor(150 + 105 * emberGlow);
-                canvasCtx.fillStyle = `rgb(${rGlow}, ${gGlow}, ${bGlow})`;
-                canvasCtx.beginPath(); canvasCtx.arc(cigLength, 0, 5 + 3 * emberGlow, 0, 2 * Math.PI); canvasCtx.fill();
-                canvasCtx.restore();
-
-                let tipRad = angle * Math.PI / 180;
-                let tipX = cigX + Math.cos(tipRad) * cigLength;
-                let tipY = cigY + Math.sin(tipRad) * cigLength;
-
-                if (isInhaling || Math.random() < 0.15) {
-                    particles.push(new SmokeParticle(tipX, tipY));
-                }
-
-                for (let i = particles.length - 1; i >= 0; i--) {
-                    particles[i].update();
-                    canvasCtx.fillStyle = `rgba(200, 200, 205, ${particles[i].alpha})`;
-                    canvasCtx.beginPath();
-                    canvasCtx.arc(particles[i].x, particles[i].y, particles[i].radius, 0, 2 * Math.PI);
-                    canvasCtx.fill();
-                    if (particles[i].isDead()) particles.splice(i, 1);
-                }
-
-                canvasCtx.fillStyle = "#00ffff";
-                canvasCtx.font = "16px Courier New";
-                canvasCtx.fillText(`Mod: Gelişmiş Simülasyon (${cigAttachedTo.toUpperCase()})`, 20, 50);
-            }
-
-            canvasCtx.restore();
-        }
-
-        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-        hands.setOptions({ 
-            maxNumHands: 1,
-            modelComplexity: 0,
-            minDetectionConfidence: 0.5, 
-            minTrackingConfidence: 0.5 
-        });
-        hands.onResults(onResults);
-
-        // --- KESİN ÇÖZÜM: GÖRÜNTÜYÜ AYRI, YAPAY ZEKA ÇALIŞMASINI AYRI TUTAN DÖNGÜ ---
-        let latestResults = null;
-        let isAnalyzing = false;
-
-        // Yapay zeka sonuçlarını global değişkene alıyoruz
-        const originalOnResults = onResults;
-        hands.onResults = (results) => {
-            latestResults = results;
-            originalOnResults(results);
-            isAnalyzing = false; // İşlem bitti, yeni kare alabiliriz
-        };
-
-        async function mainLoop() {
-            if (currentMode && videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
-                // 1. Kamera akışını ASLA dondurmadan direkt ekrana çiz (Akıcılık buradan gelir)
-                canvasElement.width = videoElement.videoWidth;
-                canvasElement.height = videoElement.videoHeight;
-                canvasCtx.save();
-                canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-                canvasCtx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
-                canvasCtx.restore();
-
-                // 2. Yapay zekayı arkada kuyruğa sokmadan, sadece önceki bittiyse çalıştır
                 if (!isAnalyzing) {
                     isAnalyzing = true;
                     try {
@@ -312,11 +300,6 @@
                     } catch (e) {
                         isAnalyzing = false;
                     }
-                }
-
-                // 3. Eğer yapay zeka sonuç ürettiyse simülasyonu (sigara/duman) üstüne çiz
-                if (latestResults && currentMode === 'sim') {
-                    drawSimulation(latestResults, canvasElement.width, canvasElement.height);
                 }
             }
             requestAnimationFrame(mainLoop);
