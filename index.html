@@ -224,11 +224,10 @@
         });
 
         let latestResults = null;
-        let isAnalyzing = false;
+        let frameCount = 0;
 
         hands.onResults = (results) => {
             latestResults = results;
-            isAnalyzing = false;
         };
 
         async function mainLoop() {
@@ -242,6 +241,16 @@
                 canvasCtx.clearRect(0, 0, w, h);
                 canvasCtx.drawImage(videoElement, 0, 0, w, h);
                 canvasCtx.restore();
+
+                // Her 2 karede bir yapay zekaya göndererek donmaları kesin olarak önleyelim
+                frameCount++;
+                if (frameCount % 2 === 0) {
+                    try {
+                        await hands.send({ image: videoElement });
+                    } catch (e) {
+                        console.error("AI Hatası:", e);
+                    }
+                }
 
                 // 1. VİZÖR & SS MODU
                 if (currentMode === 'vizor' && latestResults && latestResults.multiHandLandmarks && latestResults.multiHandLandmarks.length === 2) {
@@ -285,15 +294,6 @@
                 // 2. SİMÜLASYON MODU
                 if (currentMode === 'sim' && latestResults) {
                     drawSimulation(latestResults, w, h);
-                }
-
-                if (!isAnalyzing) {
-                    isAnalyzing = true;
-                    try {
-                        await hands.send({ image: videoElement });
-                    } catch (e) {
-                        isAnalyzing = false;
-                    }
                 }
             }
             requestAnimationFrame(mainLoop);
