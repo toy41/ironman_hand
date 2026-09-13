@@ -40,7 +40,7 @@
         <h1>VISIONHAND.ONLINE</h1>
         <p>Lütfen bir mod seçin:</p>
         <button class="menu-btn" onclick="startMode('vizor')">1. Vizör & SS Modu</button>
-        <button class="menu-btn" onclick="startMode('sim')">2. Simülasyon Modu</button>
+        <button class="menu-btn" onclick="startMode('sim')">2. Simülasyon Modu (Gelişmiş)</button>
         <div style="margin-top: 40px; font-size: 11px; color: #666;">DEVELOPED BY TOYGUN GALYAN</div>
     </div>
 
@@ -57,19 +57,21 @@
 
         let currentMode = null;
         let flashFrames = 0, lastPicTime = 0;
-        let prevX1=0, prevY1=0, prevX2=0, prevY2=0;
-        const smoothing = 0.6;
 
-        // Sigara ve Duman Değişkenleri
-        let cigLength = 130;
+        // --- PYTHON TARZI GELİŞMİŞ SİGARA VE DUMAN SİSTEMİ DEĞİŞKENLERİ ---
+        const CIG_MAX_LEN = 130;
+        const CIG_MIN_LEN = 34;
+        let cigLength = CIG_MAX_LEN;
         let cigAttachedTo = "mouth"; // "mouth" veya "hand"
+        let emberGlow = 0.25;
         let particles = [];
+        let burnedOutSince = null;
 
         function startMode(mode) {
             currentMode = mode;
             document.getElementById('menu-container').style.display = 'none';
             document.getElementById('back-btn').style.display = 'block';
-            if(mode === 'vizor') {
+            if(mode === 'vizor' || mode === 'sim') {
                 document.getElementById('hud-signature').style.display = 'block';
             }
             camera.start();
@@ -90,24 +92,30 @@
             return curled >= 3;
         }
 
-        // Duman Sistemi (Tarayıcı için)
+        // --- PYTHON'DAKİ PARTICLE SINIFININ JS KARŞILIĞI ---
         class SmokeParticle {
             constructor(x, y) {
-                this.x = x + (Math.random() - 0.5) * 10;
-                this.y = y + (Math.random() - 0.5) * 10;
-                this.vx = (Math.random() - 0.5) * 1;
-                this.vy = -1.5 - Math.random();
+                this.x = x + (Math.random() - 0.5) * 8;
+                this.y = y + (Math.random() - 0.5) * 6;
+                this.vx = (Math.random() - 0.5) * 1.0;
+                this.vy = -1.2 - Math.random() * 0.8;
                 this.radius = 10 + Math.random() * 8;
                 this.alpha = 0.6;
-                this.maxAge = 60;
+                this.maxAge = 70;
                 this.age = 0;
             }
             update() {
+                this.age++;
                 this.x += this.vx;
                 this.y += this.vy;
-                this.radius += 0.4;
-                this.age++;
-                this.alpha = Math.max(0, (1 - this.age / this.maxAge) * 0.6);
+                this.vx += (Math.random() - 0.5) * 0.1;
+                this.vy -= 0.005;
+                this.radius += 0.55;
+                let lifeRatio = this.age / this.maxAge;
+                this.alpha = Math.max(0, (1.0 - lifeRatio) * 0.7);
+            }
+            isDead() {
+                return this.age >= this.maxAge || this.alpha <= 0.02;
             }
         }
 
@@ -153,7 +161,7 @@
                             tCtx.font = "bold 18px Courier New"; tCtx.fillStyle = "rgba(0, 255, 255, 0.9)";
                             tCtx.textAlign = "right"; tCtx.fillText("by Toygun Galyan", boxW - 15, boxH - 15);
                             const link = document.createElement('a');
-                            link.download = `visionhand_${now}.jpg`; link.href = tempCanvas.toDataURL('image/jpeg'); link.link.click();
+                            link.download = `visionhand_${now}.jpg`; link.href = tempCanvas.toDataURL('image/jpeg'); link.click();
                         }
                     }
                 }
@@ -162,62 +170,117 @@
                 }
             } 
             else if (currentMode === 'sim') {
-                // --- SİMÜLASYON (SİGARA) MODU ---
-                let mouthX = w * 0.5, mouthY = h * 0.55; // Varsayılan yüz orta altı
+                // --- GELİŞMİŞ SİGARA SİMÜLASYONU (PYTHON MANTIĞI) ---
+                let mouthX = w * 0.5, mouthY = h * 0.55;
                 let handX = null, handY = null, isPinching = false;
 
+                // El ve parmak (pinch/tutma) tespiti
                 if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                     const hand = results.multiHandLandmarks[0];
-                    handX = hand[8].x * w; // İşaret parmağı ucu
-                    handY = hand[8].y * h;
-                    let thumbX = hand[4].x * w, thumbY = hand[4].y * h;
-                    let dist = Math.hypot(handX - thumbX, handY - thumbY);
-                    if (dist < 45) isPinching = true;
+                    let ix = hand[8].x * w, iy = hand[8].y * h; // İşaret parmağı ucu
+                    let tx = hand[4].x * w, ty = hand[4].y * h; // Baş parmak ucu
+                    let mx = hand[12].x * w, my = hand[12].y * h; // Orta parmak ucu
+
+                    let distThumbIndex = Math.hypot(tx - ix, ty - iy);
+                    let distIndexMiddle = Math.hypot(ix - mx, iy - my);
+
+                    if (distIndexMiddle < distThumbIndex && distIndexMiddle < 55) {
+                        isPinching = true;
+                        handX = (ix + mx) / 2; handY = (iy + my) / 2;
+                    } else if (distThumbIndex < 55) {
+                        isPinching = true;
+                        handX = (tx + ix) / 2; handY = (ty + iy) / 2;
+                    } else {
+                        isPinching = false;
+                        handX = ix; handY = iy;
+                    }
                 }
 
-                // Sigara Koordinat Hesabı
+                // Kapma ve bırakma mantığı (Python Cigarette sınıfı eşleşmesi)
+                let distToMouth = Math.hypot(mouthX - (handX || 0), mouthY - (handY || 0));
+                if (cigAttachedTo === "mouth") {
+                    if (isPinching && handX !== null && distToMouth < 150) {
+                        cigAttachedTo = "hand";
+                    }
+                } else if (cigAttachedTo === "hand") {
+                    if (!isPinching && distToMouth < 70) {
+                        cigAttachedTo = "mouth";
+                    }
+                }
+
+                // Pozisyon belirleme
                 let cigX = mouthX, cigY = mouthY;
-                if (isPinching && handX !== null) {
+                let angle = -10;
+                if (cigAttachedTo === "hand" && handX !== null) {
                     cigX = handX; cigY = handY;
-                    cigAttachedTo = "hand";
-                } else if (!isPinching && cigAttachedTo === "hand") {
-                    cigAttachedTo = "mouth";
+                    angle = -20;
                 }
 
-                // Sigara Gövdesi Çizimi
+                // Yanma ve Ömür Kontrolü
+                let isInhaling = distToMouth < 75;
+                if (isInhaling && cigLength > CIGARETTE_MIN_LEN) {
+                    cigLength -= 0.35;
+                    emberGlow = Math.min(1.0, emberGlow + 0.1);
+                } else {
+                    emberGlow = Math.max(0.15, emberGlow - 0.05);
+                }
+
+                if (cigLength <= CIGARETTE_MIN_LEN) {
+                    if (!burnedOutSince) burnedOutSince = Date.now();
+                    else if (Date.now() - burnedOutSince > 2200) {
+                        cigLength = CIG_MAX_LEN;
+                        burnedOutSince = null;
+                        cigAttachedTo = "mouth";
+                    }
+                }
+
+                // Sigara Gövdesi Çizimi (Rotasyonlu ve detaylı)
                 canvasCtx.save();
                 canvasCtx.translate(cigX, cigY);
-                canvasCtx.rotate(-15 * Math.PI / 180);
+                canvasCtx.rotate(angle * Math.PI / 180);
                 
-                // Sigara Beyaz Gövde
+                // Beyaz Gövde
                 canvasCtx.fillStyle = "#e0e0e0";
-                canvasCtx.fillRect(0, -4, cigLength, 8);
-                // Filtre Mavi Kısım
+                canvasCtx.fillRect(0, -4.5, cigLength, 9);
+                canvasCtx.strokeStyle = "#b0b0b0";
+                canvasCtx.lineWidth = 1;
+                canvasCtx.strokeRect(0, -4.5, cigLength, 9);
+
+                // Mavi Filtre Kısmı
                 canvasCtx.fillStyle = "#3b6ea5";
-                canvasCtx.fillRect(0, -4, 30, 8);
-                // Yanan Uç (Köz)
-                canvasCtx.fillStyle = "#ff3300";
-                canvasCtx.beginPath(); canvasCtx.arc(cigLength, 0, 5, 0, 2 * Math.PI); canvasCtx.fill();
+                canvasCtx.fillRect(0, -4.5, Math.min(28, cigLength * 0.3), 9);
+
+                // Yanan Uç (Köz ve Parlama)
+                let rGlow = Math.floor(50 + 130 * emberGlow);
+                let gGlow = Math.floor(80 + 100 * emberGlow);
+                let bGlow = Math.floor(150 + 105 * emberGlow);
+                canvasCtx.fillStyle = `rgb(${rGlow}, ${gGlow}, ${bGlow})`;
+                canvasCtx.beginPath(); canvasCtx.arc(cigLength, 0, 5 + 3 * emberGlow, 0, 2 * Math.PI); canvasCtx.fill();
                 canvasCtx.restore();
 
-                // Duman Üretimi
-                if (Math.random() < 0.3) {
-                    particles.push(new SmokeParticle(cigX + cigLength, cigY));
+                // Duman Parçacık Üretimi
+                let tipRad = angle * Math.PI / 180;
+                let tipX = cigX + Math.cos(tipRad) * cigLength;
+                let tipY = cigY + Math.sin(tipRad) * cigLength;
+
+                if (isInhaling || Math.random() < 0.15) {
+                    particles.push(new SmokeParticle(tipX, tipY));
                 }
 
-                // Dumanları Güncelle ve Çiz
+                // Dumanları Güncelle ve Render Et
                 for (let i = particles.length - 1; i >= 0; i--) {
                     particles[i].update();
                     canvasCtx.fillStyle = `rgba(200, 200, 205, ${particles[i].alpha})`;
                     canvasCtx.beginPath();
                     canvasCtx.arc(particles[i].x, particles[i].y, particles[i].radius, 0, 2 * Math.PI);
                     canvasCtx.fill();
-                    if (particles[i].alpha <= 0) particles.splice(i, 1);
+                    if (particles[i].isDead()) particles.splice(i, 1);
                 }
 
+                // HUD Bilgileri
                 canvasCtx.fillStyle = "#00ffff";
                 canvasCtx.font = "16px Courier New";
-                canvasCtx.fillText("Mod: Sigara Simülasyonu Aktif", 20, 50);
+                canvasCtx.fillText(`Mod: Gelişmiş Simülasyon (${cigAttachedTo.toUpperCase()})`, 20, 50);
             }
 
             canvasCtx.restore();
