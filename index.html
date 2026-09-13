@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Efekt Paneli - Toygun Galyan</title>
-    <!-- MediaPipe ve Kamera Kütüphaneleri -->
+    <!-- MediaPipe ve Kamera Kütüphaneleri CDN Bağlantıları -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
@@ -47,6 +47,7 @@
         let particles = [];
         let latestHands = null;
         let latestFace = null;
+        let frameCounter = 0;
 
         function changeFilter(filterName) {
             activeFilter = filterName;
@@ -61,33 +62,31 @@
         // --- DUMAN PARTİKÜL SİSTEMİ ---
         class SmokeParticle {
             constructor(x, y) {
-                this.x = x + (Math.random() * 20 - 10);
-                this.y = y + (Math.random() * 10 - 5);
-                this.vx = Math.random() * 2 - 1;
-                this.vy = -Math.random() * 3 - 1;
-                this.radius = Math.random() * 10 + 10;
-                this.alpha = Math.random() * 0.5 + 0.3;
+                this.x = x + (Math.random() * 16 - 8);
+                this.y = y + (Math.random() * 8 - 4);
+                this.vx = Math.random() * 1.6 - 0.8;
+                this.vy = -Math.random() * 2.5 - 0.8;
+                this.radius = Math.random() * 8 + 8;
+                this.alpha = Math.random() * 0.4 + 0.3;
                 this.age = 0;
-                this.maxAge = Math.random() * 40 + 40;
+                this.maxAge = Math.random() * 35 + 35;
             }
             update() {
                 this.x += this.vx;
                 this.y += this.vy;
-                this.radius += 0.4;
-                this.alpha -= 0.01;
+                this.radius += 0.35;
+                this.alpha -= 0.012;
                 this.age++;
             }
         }
 
-        // Yumruk kontrolü için eksik diziler eklendi
+        // Yumruk kontrolü için eksik diziler düzeltildi
         function checkFist(landmarks) {
             const fingertips = [8, 12, 16, 20];
             const fingerDips = [6, 10, 14, 18];
             let curled = 0;
             for (let i = 0; i < fingertips.length; i++) {
-                if (landmarks[fingertips[i]].y > landmarks[fingerDips[i]].y) {
-                    curled++;
-                }
+                if (landmarks[fingertips[i]].y > landmarks[fingerDips[i]].y) curled++;
             }
             return curled >= 3;
         }
@@ -95,7 +94,7 @@
         function onHandsResults(results) { latestHands = results; }
         function onFaceResults(results) { latestFace = results; }
 
-        // --- AKICI ÇİZİM DÖNGÜSÜ (60 FPS DÖNGÜSÜ) ---
+        // --- ULTRA HIZLI ÇİZİM DÖNGÜSÜ ---
         function renderLoop() {
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
             canvasCtx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
@@ -127,13 +126,8 @@
                     let fist1 = checkFist(h1);
                     let fist2 = checkFist(h2);
 
-                    if (fist1 && fist2) {
-                        canvasCtx.strokeStyle = "#ff0000";
-                        canvasCtx.lineWidth = 4;
-                    } else {
-                        canvasCtx.strokeStyle = "#00ffff";
-                        canvasCtx.lineWidth = 2;
-                    }
+                    canvasCtx.strokeStyle = (fist1 && fist2) ? "#ff0000" : "#00ffff";
+                    canvasCtx.lineWidth = (fist1 && fist2) ? 4 : 2;
                     canvasCtx.strokeRect(startX, startY, endX - startX, endY - startY);
                 }
             }
@@ -143,7 +137,6 @@
                 let landmarks = latestFace.multiFaceLandmarks[0];
                 let mouthX = ((landmarks[13].x + landmarks[14].x) / 2) * canvasElement.width;
                 let mouthY = ((landmarks[13].y + landmarks[14].y) / 2) * canvasElement.height;
-
                 let mouthOpenDist = Math.abs(landmarks[13].y - landmarks[14].y);
                 
                 canvasCtx.save();
@@ -160,18 +153,17 @@
                 canvasCtx.fill();
                 canvasCtx.restore();
 
-                if (Math.random() < 0.4) {
+                if (Math.random() < 0.3) {
                     let smokeStartX = mouthX + Math.cos(Math.PI / 12) * 80;
                     let smokeStartY = mouthY + Math.sin(Math.PI / 12) * 80;
                     particles.push(new SmokeParticle(smokeStartX, smokeStartY));
                 }
-                
-                if (mouthOpenDist > 0.03 && Math.random() < 0.8) {
+                if (mouthOpenDist > 0.03 && Math.random() < 0.6) {
                     particles.push(new SmokeParticle(mouthX, mouthY));
                 }
             }
 
-            // Duman partiküllerini ekrana bas
+            // Partikülleri çiz
             for (let i = particles.length - 1; i >= 0; i--) {
                 let p = particles[i];
                 p.update();
@@ -181,7 +173,7 @@
                 }
                 canvasCtx.save();
                 canvasCtx.globalAlpha = p.alpha;
-                canvasCtx.fillStyle = "rgba(220, 220, 225, 0.5)";
+                canvasCtx.fillStyle = "rgba(215, 215, 220, 0.5)";
                 canvasCtx.beginPath();
                 canvasCtx.arc(p.x, p.y, p.radius, 0, 2 * Math.PI);
                 canvasCtx.fill();
@@ -191,13 +183,13 @@
             requestAnimationFrame(renderLoop);
         }
 
-        // --- MEDIAPIPE KURULUMLARI VE AKILLI İŞLEMCİ YÖNETİMİ ---
+        // --- YAPAY ZEKA VE FRAME SKIPPING SİSTEMİ ---
         const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
-        hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
+        hands.setOptions({ maxNumHands: 2, modelComplexity: 0, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
         hands.onResults(onHandsResults);
 
         const faceMesh = new FaceMesh({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}` });
-        faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
+        faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: false, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
         faceMesh.onResults(onFaceResults);
 
         const camera = new Camera(videoElement, {
@@ -206,14 +198,17 @@
                     canvasElement.width = videoElement.videoWidth;
                     canvasElement.height = videoElement.videoHeight;
                 }
-                // AKILLI SİSTEM: Sadece aktif olan filtre işlemciyi çalıştırır, donmayı önler!
+                frameCounter++;
+                // DONMA ÖNLEYİCİ: İşlemciyi rahatlatma mekanizması
+                if (frameCounter % 2 !== 0) return;
+                
                 if (activeFilter === "vizor") {
                     await hands.send({ image: videoElement });
                 } else if (activeFilter === "smoke") {
                     await faceMesh.send({ image: videoElement });
                 } else if (activeFilter === "both") {
-                    await hands.send({ image: videoElement });
-                    await faceMesh.send({ image: videoElement });
+                    if (frameCounter % 4 === 0) await hands.send({ image: videoElement });
+                    else await faceMesh.send({ image: videoElement });
                 }
             },
             width: 640, height: 480
