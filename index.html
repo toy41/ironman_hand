@@ -290,8 +290,20 @@
         hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
         hands.onResults(onResults);
 
-        const camera = new Camera(videoElement, {
-    onFrame: async () => { if(currentMode) await hands.send({image: videoElement}); },
+        let isProcessing = false;
+
+const camera = new Camera(videoElement, {
+    onFrame: async () => {
+        if (!currentMode || isProcessing) return;
+        isProcessing = true;
+        try {
+            await hands.send({image: videoElement});
+        } catch (e) {
+            console.error(e);
+        } finally {
+            isProcessing = false;
+        }
+    },
     width: 640, height: 480, facingMode: 'user'
 });
     </script>
