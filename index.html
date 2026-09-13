@@ -2,165 +2,213 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mobil Vizör Efekti</title>
-    <!-- MediaPipe JS Kütüphaneleri -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Iron Man & Duman AI Paneli - Toygun Galyan</title>
+    <!-- MediaPipe ve Kamera Kütüphaneleri -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+    
     <style>
-        body { margin: 0; padding: 0; background-color: black; overflow: hidden; font-family: 'Courier New', Courier, monospace; }
-        canvas { display: block; width: 100vw; height: 100vh; object-fit: cover; transform: scaleX(-1); }
-        video { display: none; }
-        
-        /* ARAYÜZDEKİ NEON İMZA (HUD) */
-        #hud-signature {
-            position: absolute;
-            bottom: 25px;
-            right: 20px;
-            color: #00ffff;
-            text-shadow: 0 0 5px #00ffff, 0 0 10px #00ffff;
-            font-size: 16px;
-            text-align: right;
-            z-index: 10;
-            pointer-events: none;
-            opacity: 0.85;
-            letter-spacing: 2px;
-            font-weight: bold;
-        }
-        #hud-signature span {
-            font-size: 10px;
-            color: #ffffff;
-            text-shadow: none;
-            letter-spacing: 1px;
-        }
+        body { background-color: #121212; color: #e0e0e0; font-family: sans-serif; text-align: center; margin: 0; padding: 20px; }
+        h2 { color: #ffeb3b; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 20px; }
+        .container { max-width: 700px; margin: 0 auto; background: #1e1e1e; padding: 20px; border-radius: 15px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+        .video-container { position: relative; width: 100%; max-width: 600px; margin: 0 auto; border: 2px solid #ffeb3b; border-radius: 10px; overflow: hidden; background: #000; }
+        video, canvas { width: 100%; height: auto; display: block; }
+        canvas { position: absolute; top: 0; left: 0; }
+        .btn-group { margin-top: 20px; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+        button { background-color: #393e46; color: #eee; border: none; padding: 12px 24px; font-size: 15px; font-weight: bold; border-radius: 30px; cursor: pointer; transition: all 0.3s ease; }
+        button:hover { background-color: #ffeb3b; color: #000; transform: translateY(-2px); }
+        button.active { background-color: #ffeb3b; color: #000; box-shadow: 0 0 12px rgba(255, 235, 59, 0.6); }
+        .footer { margin-top: 25px; font-size: 12px; color: #777; }
     </style>
 </head>
 <body>
-    <!-- Ekranda Görünen Havalı Yazı -->
-    <div id="hud-signature">
-        <span>DEVELOPED BY</span><br>
-        TOYGUN GALYAN
+    <div class="container">
+        <h2>Iron Man & Duman AI Paneli</h2>
+        <div class="video-container">
+            <video id="webcam" autoplay playsinline style="display:none;"></video>
+            <canvas id="output_canvas" width="640" height="480"></canvas>
+        </div>
+        <div class="btn-group">
+            <button id="btn-vizor" class="active" onclick="changeFilter('vizor')">🛡️ Iron Man Vizör</button>
+            <button id="btn-smoke" onclick="changeFilter('smoke')">🚬 Sigara & Duman</button>
+            <button id="btn-both" onclick="changeFilter('both')">🌀 İkisi Birden</button>
+        </div>
+        <div class="footer">DEVELOPED BY TOYGUN GALYAN</div>
     </div>
 
-    <video id="video" autoplay playsinline></video>
-    <canvas id="canvas"></canvas>
-
     <script>
-        const videoElement = document.getElementById('video');
-        const canvasElement = document.getElementById('canvas');
+        const videoElement = document.getElementById('webcam');
+        const canvasElement = document.getElementById('output_canvas');
         const canvasCtx = canvasElement.getContext('2d');
+        
+        let activeFilter = "vizor";
+        let particles = [];
 
-        let flashFrames = 0;
-        let lastPicTime = 0;
-        let prevX1=0, prevY1=0, prevX2=0, prevY2=0;
-        const smoothing = 0.6;
+        function changeFilter(filterName) {
+            activeFilter = filterName;
+            document.querySelectorAll('.btn-group button').forEach(btn => btn.classList.remove('active'));
+            if(filterName === "vizor") document.getElementById('btn-vizor').classList.add('active');
+            if(filterName === "smoke") document.getElementById('btn-smoke').classList.add('active');
+            if(filterName === "both") document.getElementById('btn-both').classList.add('active');
+        }
 
-        function isFist(landmarks) {
-            const tips = [8, 12, 16, 20];
-            const dips = [6, 10, 14, 18];
+        // --- DUMAN PARTİKÜL SİSTEMİ ---
+        class SmokeParticle {
+            constructor(x, y) {
+                this.x = x + (Math.random() * 20 - 10);
+                this.y = y + (Math.random() * 10 - 5);
+                this.vx = Math.random() * 2 - 1;
+                this.vy = -Math.random() * 3 - 1;
+                this.radius = Math.random() * 10 + 10;
+                this.alpha = Math.random() * 0.5 + 0.3;
+                this.age = 0;
+                this.maxAge = Math.random() * 40 + 40;
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.radius += 0.4;
+                this.alpha -= 0.01;
+                this.age++;
+            }
+        }
+
+        // Yumruk kontrol fonksiyonu (Parmak uçları ve boğum kıyaslaması)
+        function checkFist(landmarks) {
+            const fingertips = [8, 12, 16, 20];
+            const fingerDips = [6, 10, 14, 18];
             let curled = 0;
-            for(let i=0; i<4; i++) {
-                if(landmarks[tips[i]].y > landmarks[dips[i]].y) curled++;
+            for (let i = 0; i < fingertips.length; i++) {
+                if (landmarks[fingertips[i]].y > landmarks[fingerDips[i]].y) {
+                    curled++;
+                }
             }
             return curled >= 3;
         }
 
-        function onResults(results) {
-            canvasElement.width = videoElement.videoWidth;
-            canvasElement.height = videoElement.videoHeight;
-            const w = canvasElement.width;
-            const h = canvasElement.height;
+        let latestHands = null;
+        let latestFace = null;
 
-            canvasCtx.save();
-            canvasCtx.clearRect(0, 0, w, h);
+        function onHandsResults(results) { latestHands = results; drawCombined(); }
+        function onFaceResults(results) { latestFace = results; drawCombined(); }
 
-            canvasCtx.drawImage(results.image, 0, 0, w, h);
+        function drawCombined() {
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
 
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length === 2) {
-                const hand1 = results.multiHandLandmarks[0];
-                const hand2 = results.multiHandLandmarks[1];
+            // 1. IRON MAN VIZOR EFEKTİ
+            if ((activeFilter === "vizor" || activeFilter === "both") && latestHands && latestHands.multiHandLandmarks && latestHands.multiHandLandmarks.length === 2) {
+                let h1 = latestHands.multiHandLandmarks[0];
+                let h2 = latestHands.multiHandLandmarks[1];
 
-                const fist1 = isFist(hand1);
-                const fist2 = isFist(hand2);
-
-                let x1 = hand1[9].x * w; let y1 = hand1[9].y * h;
-                let x2 = hand2[9].x * w; let y2 = hand2[9].y * h;
+                let x1 = h1[9].x * canvasElement.width;
+                let y1 = h1[9].y * canvasElement.height;
+                let x2 = h2[9].x * canvasElement.width;
+                let y2 = h2[9].y * canvasElement.height;
 
                 let startX = Math.min(x1, x2);
                 let startY = Math.min(y1, y2);
                 let endX = Math.max(x1, x2);
                 let endY = Math.max(y1, y2);
 
-                if (prevX1 === 0) {
-                    prevX1 = startX; prevY1 = startY; prevX2 = endX; prevY2 = endY;
-                } else {
-                    startX = prevX1 * smoothing + startX * (1 - smoothing);
-                    startY = prevY1 * smoothing + startY * (1 - smoothing);
-                    endX = prevX2 * smoothing + endX * (1 - smoothing);
-                    endY = prevY2 * smoothing + endY * (1 - smoothing);
-                }
-                prevX1 = startX; prevY1 = startY; prevX2 = endX; prevY2 = endY;
-
-                let boxW = endX - startX;
-                let boxH = endY - startY;
-
-                if (boxW > 0 && boxH > 0) {
-                    canvasCtx.save();
-                    canvasCtx.beginPath();
-                    canvasCtx.rect(startX, startY, boxW, boxH);
-                    canvasCtx.clip();
-                    canvasCtx.filter = 'grayscale(100%)';
-                    canvasCtx.drawImage(results.image, 0, 0, w, h);
-                    canvasCtx.restore();
-
-                    canvasCtx.lineWidth = (fist1 && fist2) ? 6 : 4;
-                    canvasCtx.strokeStyle = (fist1 && fist2) ? 'red' : 'yellow';
-                    canvasCtx.strokeRect(startX, startY, boxW, boxH);
-
-                    const now = Date.now();
-                    if (fist1 && fist2 && (now - lastPicTime > 2000)) {
-                        flashFrames = 4;
-                        lastPicTime = now;
-                        
-                        const tempCanvas = document.createElement('canvas');
-                        tempCanvas.width = boxW; tempCanvas.height = boxH;
-                        const tCtx = tempCanvas.getContext('2d');
-                        tCtx.drawImage(canvasElement, startX, startY, boxW, boxH, 0, 0, boxW, boxH);
-                        
-                        // FOTOĞRAFA EKLENEN İMZA (FILIGRAN)
-                        tCtx.font = "bold 18px Courier New";
-                        tCtx.fillStyle = "rgba(0, 255, 255, 0.9)";
-                        tCtx.textAlign = "right";
-                        tCtx.fillText("by Toygun Galyan", boxW - 15, boxH - 15);
-                        
-                        const link = document.createElement('a');
-                        link.download = `ironman_vizor_${now}.jpg`;
-                        link.href = tempCanvas.toDataURL('image/jpeg');
-                        link.click();
+                if(endX > startX && endY > startY) {
+                    let imgData = canvasCtx.getImageData(startX, startY, endX - startX, endY - startY);
+                    let data = imgData.data;
+                    for (let i = 0; i < data.length; i += 4) {
+                        let brightness = 0.34 * data[i] + 0.5 * data[i + 1] + 0.16 * data[i + 2];
+                        data[i] = brightness; data[i + 1] = brightness; data[i + 2] = brightness;
                     }
+                    canvasCtx.putImageData(imgData, startX, startY);
+                    
+                    let fist1 = checkFist(h1);
+                    let fist2 = checkFist(h2);
+
+                    if (fist1 && fist2) {
+                        canvasCtx.strokeStyle = "#ff0000";
+                        canvasCtx.lineWidth = 4;
+                    } else {
+                        canvasCtx.strokeStyle = "#00ffff";
+                        canvasCtx.lineWidth = 2;
+                    }
+                    canvasCtx.strokeRect(startX, startY, endX - startX, endY - startY);
                 }
-            } else {
-                prevX1 = 0; 
             }
 
-            if (flashFrames > 0) {
-                canvasCtx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-                canvasCtx.fillRect(0, 0, w, h);
-                flashFrames--;
+            // 2. SİGARA & DUMAN EFEKTİ
+            if ((activeFilter === "smoke" || activeFilter === "both") && latestFace && latestFace.multiFaceLandmarks && latestFace.multiFaceLandmarks.length > 0) {
+                let landmarks = latestFace.multiFaceLandmarks[0];
+                let mouthX = ((landmarks[13].x + landmarks[14].x) / 2) * canvasElement.width;
+                let mouthY = ((landmarks[13].y + landmarks[14].y) / 2) * canvasElement.height;
+
+                let mouthOpenDist = Math.abs(landmarks[13].y - landmarks[14].y);
+                
+                canvasCtx.save();
+                canvasCtx.translate(mouthX, mouthY);
+                canvasCtx.rotate(Math.PI / 12);
+                
+                canvasCtx.fillStyle = "#ffffff";
+                canvasCtx.fillRect(0, -4, 80, 8);
+                canvasCtx.fillStyle = "#ffb74d";
+                canvasCtx.fillRect(0, -4, 20, 8);
+                canvasCtx.fillStyle = mouthOpenDist > 0.02 ? "#ff3d00" : "#ff9100";
+                canvasCtx.beginPath();
+                canvasCtx.arc(80, 0, 4, 0, 2 * Math.PI);
+                canvasCtx.fill();
+                canvasCtx.restore();
+
+                if (Math.random() < 0.4) {
+                    let smokeStartX = mouthX + Math.cos(Math.PI / 12) * 80;
+                    let smokeStartY = mouthY + Math.sin(Math.PI / 12) * 80;
+                    particles.push(new SmokeParticle(smokeStartX, smokeStartY));
+                }
+                
+                if (mouthOpenDist > 0.03 && Math.random() < 0.8) {
+                    particles.push(new SmokeParticle(mouthX, mouthY));
+                }
             }
-            canvasCtx.restore();
+
+            // Partikülleri güncelle ve çiz
+            for (let i = particles.length - 1; i >= 0; i--) {
+                let p = particles[i];
+                p.update();
+                if (p.alpha <= 0 || p.age >= p.maxAge) {
+                    particles.splice(i, 1);
+                    continue;
+                }
+                canvasCtx.save();
+                canvasCtx.globalAlpha = p.alpha;
+                canvasCtx.fillStyle = "rgba(220, 220, 225, 0.5)";
+                canvasCtx.beginPath();
+                canvasCtx.arc(p.x, p.y, p.radius, 0, 2 * Math.PI);
+                canvasCtx.fill();
+                canvasCtx.restore();
+            }
         }
 
-        const hands = new Hands({locateFile: (file) => {
-            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
-        }});
+        // --- MEDIAPIPE BAĞLANTILARI ---
+        const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
         hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
-        hands.onResults(onResults);
+        hands.onResults(onHandsResults);
+
+        const faceMesh = new FaceMesh({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}` });
+        faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
+        faceMesh.onResults(onFaceResults);
 
         const camera = new Camera(videoElement, {
-            onFrame: async () => { await hands.send({image: videoElement}); },
-            width: 1280, height: 720, facingMode: 'user'
+            onFrame: async () => {
+                if (canvasElement.width !== videoElement.videoWidth) {
+                    canvasElement.width = videoElement.videoWidth;
+                    canvasElement.height = videoElement.videoHeight;
+                }
+                if (activeFilter === "vizor" || activeFilter === "both") await hands.send({ image: videoElement });
+                if (activeFilter === "smoke" || activeFilter === "both") await faceMesh.send({ image: videoElement });
+                if (activeFilter === "vizor" && (!latestHands || latestHands.multiHandLandmarks.length < 2)) drawCombined();
+            },
+            width: 640, height: 480
         });
         camera.start();
     </script>
-</body> 
+</body>
+</html>
