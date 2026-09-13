@@ -282,18 +282,44 @@
         });
         hands.onResults(onResults);
 
-        let lastProcessTime = 0;
-        const FPS_LIMIT = 30;
+        // --- KESİN ÇÖZÜM: GÖRÜNTÜYÜ AYRI, YAPAY ZEKA ÇALIŞMASINI AYRI TUTAN DÖNGÜ ---
+        let latestResults = null;
+        let isAnalyzing = false;
 
-        async function predictionLoop() {
+        // Yapay zeka sonuçlarını global değişkene alıyoruz
+        const originalOnResults = onResults;
+        hands.onResults = (results) => {
+            latestResults = results;
+            originalOnResults(results);
+            isAnalyzing = false; // İşlem bitti, yeni kare alabiliriz
+        };
+
+        async function mainLoop() {
             if (currentMode && videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
-                const now = performance.now();
-                if (now - lastProcessTime >= 1000 / FPS_LIMIT) {
-                    lastProcessTime = now;
-                    await hands.send({ image: videoElement });
+                // 1. Kamera akışını ASLA dondurmadan direkt ekrana çiz (Akıcılık buradan gelir)
+                canvasElement.width = videoElement.videoWidth;
+                canvasElement.height = videoElement.videoHeight;
+                canvasCtx.save();
+                canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+                canvasCtx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+                canvasCtx.restore();
+
+                // 2. Yapay zekayı arkada kuyruğa sokmadan, sadece önceki bittiyse çalıştır
+                if (!isAnalyzing) {
+                    isAnalyzing = true;
+                    try {
+                        await hands.send({ image: videoElement });
+                    } catch (e) {
+                        isAnalyzing = false;
+                    }
+                }
+
+                // 3. Eğer yapay zeka sonuç ürettiyse simülasyonu (sigara/duman) üstüne çiz
+                if (latestResults && currentMode === 'sim') {
+                    drawSimulation(latestResults, canvasElement.width, canvasElement.height);
                 }
             }
-            requestAnimationFrame(predictionLoop);
+            requestAnimationFrame(mainLoop);
         }
 
         async function startCameraAndLoop() {
@@ -303,10 +329,10 @@
                 });
                 videoElement.srcObject = stream;
                 await videoElement.play();
-                requestAnimationFrame(predictionLoop);
+                requestAnimationFrame(mainLoop);
             } catch (err) {
-                console.error("Kamera erişim hatası:", err);
-                alert("Kamera açılamadı veya izin verilmedi!");
+                console.error("Kamera hatası:", err);
+                alert("Kamera açılamadı!");
             }
         }
     </script>
