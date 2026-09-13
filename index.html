@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>VisionHand Platformu</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+    <style>
+        body { margin: 0; padding: 0; background-color: black; overflow: hidden; font-family: 'Courier New', Courier, monospace; color: white; }
+        canvas { display: block; width: 100vw; height: 100vh; object-fit: cover; transform: scaleX(-1); }
+        video { display: none; }
+        
+        #menu-container {
+            position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0, 0, 0, 0.9); display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 100;
+        }
+        h1 { color: #00ffff; text-shadow: 0 0 10px #00ffff; margin-bottom: 10px; font-size: 24px; text-align: center; }
+        p { color: #aaa; font-size: 14px; margin-bottom: 30px; }
+        .menu-btn {
+            background: linear-gradient(45deg, #111, #333); border: 2px solid #00ffff;
+            color: #00ffff; padding: 15px 30px; margin: 10px; font-size: 16px;
+            font-weight: bold; border-radius: 8px; cursor: pointer; width: 80%; max-width: 300px; text-align: center;
+        }
+        .menu-btn:active { background: #00ffff; color: black; }
+        #back-btn {
+            position: absolute; top: 20px; left: 20px; background: rgba(255,0,0,0.7);
+            border: none; color: white; padding: 8px 15px; border-radius: 5px; font-weight: bold; z-index: 50; display: none; cursor: pointer;
+        }
+        #hud-signature {
+            position: absolute; bottom: 25px; right: 20px; color: #00ffff;
+            text-shadow: 0 0 5px #00ffff; font-size: 16px; text-align: right; z-index: 10; pointer-events: none; opacity: 0.85; font-weight: bold; display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="menu-container">
+        <h1>VISIONHAND.ONLINE</h1>
+        <p>Lütfen bir mod seçin:</p>
+        <button class="menu-btn" onclick="startMode('vizor')">1. Vizör & SS Modu</button>
+        <button class="menu-btn" onclick="startMode('sim')">2. Simülasyon Modu</button>
+        <div style="margin-top: 40px; font-size: 11px; color: #666;">DEVELOPED BY TOYGUN GALYAN</div>
+    </div>
+
+    <button id="back-btn" onclick="goBackToMenu()">← Menüye Dön</button>
+    <div id="hud-signature"><span>DEVELOPED BY</span><br>TOYGUN GALYAN</div>
+
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const videoElement = document.getElementById('video');
+        const canvasElement = document.getElementById('canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+
+        let currentMode = null;
+        let flashFrames = 0, lastPicTime = 0;
+        let prevX1=0, prevY1=0, prevX2=0, prevY2=0;
+        const smoothing = 0.6;
+
+        // Sigara ve Duman Değişkenleri
+        let cigLength = 130;
+        let cigAttachedTo = "mouth"; // "mouth" veya "hand"
+        let particles = [];
+
+        function startMode(mode) {
+            currentMode = mode;
+            document.getElementById('menu-container').style.display = 'none';
+            document.getElementById('back-btn').style.display = 'block';
+            if(mode === 'vizor') {
+                document.getElementById('hud-signature').style.display = 'block';
+            }
+            camera.start();
+        }
+
+        function goBackToMenu() {
+            currentMode = null;
+            document.getElementById('menu-container').style.display = 'flex';
+            document.getElementById('hud-signature').style.display = 'none';
+            document.getElementById('back-btn').style.display = 'none';
+            window.location.reload();
+        }
+
+        function isFist(landmarks) {
+            const tips = [8, 12, 16, 20], dips = [6, 10, 14, 18];
+            let curled = 0;
+            for(let i=0; i<4; i++) if(landmarks[tips[i]].y > landmarks[dips[i]].y) curled++;
+            return curled >= 3;
+        }
+
+        // Duman Sistemi (Tarayıcı için)
+        class SmokeParticle {
+            constructor(x, y) {
+                this.x = x + (Math.random() - 0.5) * 10;
+                this.y = y + (Math.random() - 0.5) * 10;
+                this.vx = (Math.random() - 0.5) * 1;
+                this.vy = -1.5 - Math.random();
+                this.radius = 10 + Math.random() * 8;
+                this.alpha = 0.6;
+                this.maxAge = 60;
+                this.age = 0;
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.radius += 0.4;
+                this.age++;
+                this.alpha = Math.max(0, (1 - this.age / this.maxAge) * 0.6);
+            }
+        }
+
+        function onResults(results) {
+            canvasElement.width = videoElement.videoWidth;
+            canvasElement.height = videoElement.videoHeight;
+            const w = canvasElement.width;
+            const h = canvasElement.height;
+
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, w, h);
+            canvasCtx.drawImage(results.image, 0, 0, w, h);
+
+            if (currentMode === 'vizor') {
+                // --- VİZÖR MODU ---
+                if (results.multiHandLandmarks && results.multiHandLandmarks.length === 2) {
+                    const hand1 = results.multiHandLandmarks[0], hand2 = results.multiHandLandmarks[1];
+                    const fist1 = isFist(hand1), fist2 = isFist(hand2);
+                    let x1 = hand1[9].x * w, y1 = hand1[9].y * h;
+                    let x2 = hand2[9].x * w, y2 = hand2[9].y * h;
+                    let startX = Math.min(x1, x2), startY = Math.min(y1, y2);
+                    let endX = Math.max(x1, x2), endY = Math.max(y1, y2);
+
+                    let boxW = endX - startX, boxH = endY - startY;
+                    if (boxW > 0 && boxH > 0) {
+                        canvasCtx.save();
+                        canvasCtx.beginPath(); canvasCtx.rect(startX, startY, boxW, boxH); canvasCtx.clip();
+                        canvasCtx.filter = 'grayscale(100%)';
+                        canvasCtx.drawImage(results.image, 0, 0, w, h);
+                        canvasCtx.restore();
+
+                        canvasCtx.lineWidth = (fist1 && fist2) ? 6 : 4;
+                        canvasCtx.strokeStyle = (fist1 && fist2) ? 'red' : 'yellow';
+                        canvasCtx.strokeRect(startX, startY, boxW, boxH);
+
+                        const now = Date.now();
+                        if (fist1 && fist2 && (now - lastPicTime > 2000)) {
+                            flashFrames = 4; lastPicTime = now;
+                            const tempCanvas = document.createElement('canvas');
+                            tempCanvas.width = boxW; tempCanvas.height = boxH;
+                            const tCtx = tempCanvas.getContext('2d');
+                            tCtx.drawImage(canvasElement, startX, startY, boxW, boxH, 0, 0, boxW, boxH);
+                            tCtx.font = "bold 18px Courier New"; tCtx.fillStyle = "rgba(0, 255, 255, 0.9)";
+                            tCtx.textAlign = "right"; tCtx.fillText("by Toygun Galyan", boxW - 15, boxH - 15);
+                            const link = document.createElement('a');
+                            link.download = `visionhand_${now}.jpg`; link.href = tempCanvas.toDataURL('image/jpeg'); link.link.click();
+                        }
+                    }
+                }
+                if (flashFrames > 0) {
+                    canvasCtx.fillStyle = 'rgba(255, 255, 255, 0.9)'; canvasCtx.fillRect(0, 0, w, h); flashFrames--;
+                }
+            } 
+            else if (currentMode === 'sim') {
+                // --- SİMÜLASYON (SİGARA) MODU ---
+                let mouthX = w * 0.5, mouthY = h * 0.55; // Varsayılan yüz orta altı
+                let handX = null, handY = null, isPinching = false;
+
+                if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                    const hand = results.multiHandLandmarks[0];
+                    handX = hand[8].x * w; // İşaret parmağı ucu
+                    handY = hand[8].y * h;
+                    let thumbX = hand[4].x * w, thumbY = hand[4].y * h;
+                    let dist = Math.hypot(handX - thumbX, handY - thumbY);
+                    if (dist < 45) isPinching = true;
+                }
+
+                // Sigara Koordinat Hesabı
+                let cigX = mouthX, cigY = mouthY;
+                if (isPinching && handX !== null) {
+                    cigX = handX; cigY = handY;
+                    cigAttachedTo = "hand";
+                } else if (!isPinching && cigAttachedTo === "hand") {
+                    cigAttachedTo = "mouth";
+                }
+
+                // Sigara Gövdesi Çizimi
+                canvasCtx.save();
+                canvasCtx.translate(cigX, cigY);
+                canvasCtx.rotate(-15 * Math.PI / 180);
+                
+                // Sigara Beyaz Gövde
+                canvasCtx.fillStyle = "#e0e0e0";
+                canvasCtx.fillRect(0, -4, cigLength, 8);
+                // Filtre Mavi Kısım
+                canvasCtx.fillStyle = "#3b6ea5";
+                canvasCtx.fillRect(0, -4, 30, 8);
+                // Yanan Uç (Köz)
+                canvasCtx.fillStyle = "#ff3300";
+                canvasCtx.beginPath(); canvasCtx.arc(cigLength, 0, 5, 0, 2 * Math.PI); canvasCtx.fill();
+                canvasCtx.restore();
+
+                // Duman Üretimi
+                if (Math.random() < 0.3) {
+                    particles.push(new SmokeParticle(cigX + cigLength, cigY));
+                }
+
+                // Dumanları Güncelle ve Çiz
+                for (let i = particles.length - 1; i >= 0; i--) {
+                    particles[i].update();
+                    canvasCtx.fillStyle = `rgba(200, 200, 205, ${particles[i].alpha})`;
+                    canvasCtx.beginPath();
+                    canvasCtx.arc(particles[i].x, particles[i].y, particles[i].radius, 0, 2 * Math.PI);
+                    canvasCtx.fill();
+                    if (particles[i].alpha <= 0) particles.splice(i, 1);
+                }
+
+                canvasCtx.fillStyle = "#00ffff";
+                canvasCtx.font = "16px Courier New";
+                canvasCtx.fillText("Mod: Sigara Simülasyonu Aktif", 20, 50);
+            }
+
+            canvasCtx.restore();
+        }
+
+        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+        hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
+        hands.onResults(onResults);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => { if(currentMode) await hands.send({image: videoElement}); },
+            width: 1280, height: 720, facingMode: 'user'
+        });
+    </script>
+</body>
+</html>
