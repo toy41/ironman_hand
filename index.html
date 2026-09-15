@@ -4,38 +4,44 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>VisionHand WebAR - Toygun Galyan</title>
+    <!-- Kütüphaneler: Three.js ve MediaPipe -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
     <style>
         body { margin: 0; padding: 0; background-color: black; overflow: hidden; font-family: 'Courier New', Courier, monospace; color: white; }
+        
+        /* Katmanlar */
         video { display: none; }
         #bg-canvas { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; transform: scaleX(-1); object-fit: cover; }
         #webgl-container { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 2; pointer-events: none; }
+        
+        /* Arayüz ve Menü */
         #ui-layer { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 10; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; }
         #status-box { padding: 20px; text-shadow: 0 0 5px black, 0 0 10px black; background: linear-gradient(180deg, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0) 100%); }
-        #app-title { font-size: 22px; font-weight: bold; margin-bottom: 10px; text-transform: uppercase;}
+        #app-title { color: #00ffff; font-size: 22px; font-weight: bold; margin-bottom: 10px; text-transform: uppercase;}
+        
+        /* Öğretici Metin Stili */
         #status-text { font-size: 18px; color: #ffcc00; line-height: 1.4; }
         .hint { font-size: 14px; color: #ffffff; display: block; margin-top: 5px; font-style: italic; }
+        
         #hud-signature { padding: 20px; text-align: right; color: #00ffff; text-shadow: 0 0 5px #00ffff, 0 0 10px #00ffff; font-size: 16px; letter-spacing: 2px; font-weight: bold; }
         #hud-signature span { font-size: 10px; color: #ffffff; text-shadow: none; letter-spacing: 1px; }
+
+        /* Başlangıç Menüsü */
         #menu-screen { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 10, 20, 0.95); z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: auto; }
-        .menu-btn { background: transparent; border: 2px solid #00ffff; color: #00ffff; padding: 15px 30px; margin: 10px; font-size: 18px; font-family: 'Courier New', Courier, monospace; font-weight: bold; cursor: pointer; transition: 0.3s; width: 80%; max-width: 350px; text-align: center; text-transform: uppercase; }
+        .menu-btn { background: transparent; border: 2px solid #00ffff; color: #00ffff; padding: 15px 30px; margin: 15px; font-size: 18px; font-family: 'Courier New', Courier, monospace; font-weight: bold; cursor: pointer; transition: 0.3s; width: 80%; max-width: 350px; text-align: center; text-transform: uppercase; }
         .menu-btn:hover { background: #00ffff; color: black; box-shadow: 0 0 15px #00ffff; }
         .menu-btn.vizor { border-color: #ff0055; color: #ff0055; }
         .menu-btn.vizor:hover { background: #ff0055; color: white; box-shadow: 0 0 15px #ff0055; }
-        .menu-btn.smoke { border-color: #00ff66; color: #00ff66; }
-        .menu-btn.smoke:hover { background: #00ff66; color: black; box-shadow: 0 0 15px #00ff66; }
     </style>
 </head>
 <body>
     <div id="menu-screen">
-        <h1 style="color: #00ffff; text-shadow: 0 0 10px #00ffff; margin-bottom: 30px; text-align: center; letter-spacing: 2px;">VISIONHAND<br><span style="font-size: 14px; color: white; letter-spacing: 4px;">MOBİL WEBAR SİSTEMİ</span></h1>
+        <h1 style="color: #00ffff; text-shadow: 0 0 10px #00ffff; margin-bottom: 40px; text-align: center; letter-spacing: 2px;">VISIONHAND<br><span style="font-size: 14px; color: white; letter-spacing: 4px;">MOBİL WEBAR SİSTEMİ</span></h1>
         <button class="menu-btn" onclick="startApp(1)">1. Hologram Dünya Modu</button>
         <button class="menu-btn vizor" onclick="startApp(2)">2. SS Alıcı Vizör Modu</button>
-        <button class="menu-btn smoke" onclick="startApp(3)">3. Sigara Simülasyonu</button>
-        <div style="margin-top: 30px; font-size: 14px; color: #aaaaaa; text-align: center; line-height: 1.5;">
+        <div style="margin-top: 40px; font-size: 14px; color: #aaaaaa; text-align: center; line-height: 1.5;">
             Lütfen tarayıcının kamera iznine <b>ONAY</b> verin.<br>Farklı moda geçmek için sayfayı yenileyin.
         </div>
     </div>
@@ -46,8 +52,8 @@
 
     <div id="ui-layer" style="display: none;">
         <div id="status-box">
-            <div id="app-title" style="color:#00ffff;">BAŞLATILIYOR...</div>
-            <div id="status-text">Yapay Zeka Modelleri Yükleniyor...</div>
+            <div id="app-title">BAŞLATILIYOR...</div>
+            <div id="status-text">Kamera bekleniyor...</div>
         </div>
         <div id="hud-signature">
             <span>DEVELOPED BY</span><br>TOYGUN GALYAN
@@ -62,86 +68,7 @@
         const statusText = document.getElementById('status-text');
         const appTitle = document.getElementById('app-title');
 
-        let handsData = null;
-        let faceData = null;
-
-        // ==========================================
-        // GELİŞTİRİLMİŞ DUMAN MOTORU (PARTICLE SYSTEM)
-        // ==========================================
-        class Particle {
-            constructor(x, y, type="normal") {
-                this.type = type;
-                if (type === "blow") {
-                    // Üfleme Modu: Çok daha geniş, yoğun ve uzun ömürlü
-                    this.x = x + (Math.random() - 0.5) * 50;
-                    this.y = y + (Math.random() - 0.5) * 20;
-                    this.vx = (Math.random() - 0.5) * 8.0; // Sağa sola güçlü yayılım
-                    this.vy = -(Math.random() * 4.0 + 1.5); // Yukarı ve dışa doğru
-                    this.radius = Math.random() * 25 + 20; // Kocaman bulutlar
-                    this.maxAge = Math.random() * 5.0 + 5.0; // 5 ile 10 saniye arası yaşar
-                    this.alpha = Math.random() * 0.5 + 0.5; // Çok yoğun başlangıç
-                } else {
-                    // Normal Yanma Modu: İnce ve süzülen
-                    this.x = x + (Math.random() - 0.5) * 16;
-                    this.y = y + (Math.random() - 0.5) * 10;
-                    this.vx = (Math.random() - 0.5) * 1.5;
-                    this.vy = -(Math.random() * 2.0 + 1.0);
-                    this.radius = Math.random() * 8 + 10;
-                    this.maxAge = Math.random() * 2.0 + 3.0; // 2-3 saniye
-                    this.alpha = Math.random() * 0.3 + 0.4;
-                }
-                this.age = 0;
-            }
-            update(dt) {
-                this.age += dt;
-                this.x += this.vx;
-                this.y += this.vy;
-                
-                if (this.type === "blow") {
-                    this.vx += (Math.random() - 0.5) * 0.5; // Rüzgar efekti
-                    this.vy -= 0.03; // Yavaşça yükselme ivmesi
-                    this.radius += 1.5; // Bulut gibi giderek açılır
-                } else {
-                    this.vx += (Math.random() - 0.5) * 0.2;
-                    this.vy -= 0.05; 
-                    this.radius += 0.8;
-                }
-                
-                let lifeRatio = this.age / this.maxAge;
-                let maxAlpha = this.type === "blow" ? 0.8 : 0.7;
-                this.alpha = Math.max(0, (1.0 - lifeRatio) * maxAlpha);
-            }
-            isDead() { return this.age >= this.maxAge || this.alpha <= 0.01; }
-        }
-        
-        class SmokeSystem {
-            constructor() { this.particles = []; }
-            spawn(x, y, count, type="normal") { 
-                for(let i=0; i<count; i++) this.particles.push(new Particle(x, y, type)); 
-            }
-            update(dt) {
-                this.particles.forEach(p => p.update(dt));
-                this.particles = this.particles.filter(p => !p.isDead());
-            }
-            render(ctx) {
-                if(this.particles.length === 0) return;
-                ctx.save();
-                ctx.filter = 'blur(8px)';
-                this.particles.forEach(p => {
-                    ctx.beginPath();
-                    ctx.arc(p.x, p.y, p.radius, 0, 2*Math.PI);
-                    ctx.fillStyle = `rgba(200, 200, 210, ${p.alpha})`;
-                    ctx.fill();
-                });
-                ctx.restore();
-            }
-        }
-
-        let cigLength = 130, cigAttachedTo = "mouth", cigEmberGlow = 0.25;
-        let cigPosX = 0, cigPosY = 0, cigAngle = -10;
-        let smokeSys = new SmokeSystem();
-        let wasMouthOpen = false, blowCooldown = 0;
-
+        // --- THREE.JS KURULUMU ---
         const scene = new THREE.Scene();
         const camera3D = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
         camera3D.position.z = 10;
@@ -153,13 +80,17 @@
         const earthTex = new THREE.TextureLoader().load('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg');
         const earthMat = new THREE.MeshStandardMaterial({ map: earthTex, roughness: 0.6 });
         const earth = new THREE.Mesh(earthGeo, earthMat);
-        earth.visible = false; scene.add(earth);
+        earth.visible = false; 
+        scene.add(earth);
 
         const light = new THREE.DirectionalLight(0xffffff, 1.5);
-        light.position.set(5, 3, 5); scene.add(light);
+        light.position.set(5, 3, 5);
+        scene.add(light);
         scene.add(new THREE.AmbientLight(0x333333)); 
 
-        let hologramState = "hidden", targetRotX = 0, targetRotY = 0;
+        let hologramState = "hidden"; 
+        let targetRotX = 0, targetRotY = 0;
+
         function getWorldPos(x, y) {
             let vFOV = THREE.MathUtils.degToRad(camera3D.fov);
             let height = 2 * Math.tan(vFOV / 2) * camera3D.position.z;
@@ -167,78 +98,100 @@
             return new THREE.Vector3((x - 0.5) * width, -(y - 0.5) * height, 0);
         }
 
-        let flashFrames = 0, lastPicTime = 0, prevX1=0, prevY1=0, prevX2=0, prevY2=0;
+        function animate3D() {
+            requestAnimationFrame(animate3D);
+            if (currentMode === 1) {
+                if (hologramState === "rotating") {
+                    earth.rotation.y += (targetRotY - earth.rotation.y) * 0.1;
+                    earth.rotation.x += (targetRotX - earth.rotation.x) * 0.1;
+                } else if (hologramState === "floating" && earth.visible) {
+                    earth.rotation.y += 0.005;
+                }
+                renderer.render(scene, camera3D);
+            }
+        }
+        animate3D();
+
+        // --- VİZÖR MODU DEĞİŞKENLERİ ---
+        let flashFrames = 0;
+        let lastPicTime = 0;
+        let prevX1=0, prevY1=0, prevX2=0, prevY2=0;
         const smoothing = 0.6;
+
         function isFist(landmarks) {
-            const tips = [8, 12, 16, 20], dips = [6, 10, 14, 18];
+            const tips = [8, 12, 16, 20];
+            const dips = [6, 10, 14, 18];
             let curled = 0;
-            for(let i=0; i<4; i++) if(landmarks[tips[i]].y > landmarks[dips[i]].y) curled++;
+            for(let i=0; i<4; i++) {
+                if(landmarks[tips[i]].y > landmarks[dips[i]].y) curled++;
+            }
             return curled >= 3;
         }
 
-        let lastTime = performance.now();
-        function renderLoop() {
-            requestAnimationFrame(renderLoop);
-            if (!videoElement.videoWidth) return;
-            
-            let now = performance.now();
-            let dt = (now - lastTime) / 1000;
-            lastTime = now;
-
-            const w = videoElement.videoWidth;
-            const h = videoElement.videoHeight;
-            bgCanvas.width = w; bgCanvas.height = h;
-
+        // --- MEDIAPIPE YÖNETİMİ ---
+        function onResults(results) {
+            bgCanvas.width = videoElement.videoWidth;
+            bgCanvas.height = videoElement.videoHeight;
+            const w = bgCanvas.width;
+            const h = bgCanvas.height;
             bgCtx.save();
             bgCtx.clearRect(0, 0, w, h);
-            
-            if (currentMode !== 2 || !(handsData && handsData.length === 2)) {
-                bgCtx.drawImage(videoElement, 0, 0, w, h);
-            }
+            bgCtx.drawImage(results.image, 0, 0, w, h);
 
-            let hCount = handsData ? handsData.length : 0;
+            if (!results.multiHandLandmarks) return;
+            const hCount = results.multiHandLandmarks.length;
 
+            // ==========================================
+            // MOD 1: 3D DÜNYA HOLOGRAMI (EĞİTİCİ METİNLER)
+            // ==========================================
             if (currentMode === 1) {
-                let parsedHands = [];
+                let handsData = [];
                 for(let i=0; i<hCount; i++) {
-                    let hl = handsData[i];
-                    // 3D için 1.0 eksi X mantığı korunuyor
-                    let hx = 1.0 - ((hl[4].x + hl[8].x) / 2), hy = (hl[4].y + hl[8].y) / 2;
+                    let hl = results.multiHandLandmarks[i];
+                    let hx = 1.0 - ((hl[4].x + hl[8].x) / 2); 
+                    let hy = (hl[4].y + hl[8].y) / 2;
                     let pinchDist = Math.hypot(hl[4].x - hl[8].x, hl[4].y - hl[8].y);
-                    parsedHands.push({ pos: getWorldPos(hx, hy), pinching: pinchDist < 0.08, palm: hl[9] });
+                    handsData.push({ pos: getWorldPos(hx, hy), pinching: pinchDist < 0.08, palm: hl[9] });
                 }
 
                 if (hologramState === "hidden") {
                     statusText.innerHTML = "<b>BAŞLAMAK İÇİN İKİ ELİNİZİ GÖSTERİN</b><span class='hint'>Dünyayı yaratmak için: İki elinizin de işaret parmağı ile baş parmağını birbirine değdirin (kıstırın).</span>";
-                    if (hCount === 2 && parsedHands[0].pinching && parsedHands[1].pinching) {
-                        if (parsedHands[0].pos.distanceTo(parsedHands[1].pos) < 4.0) { 
+                    
+                    if (hCount === 2 && handsData[0].pinching && handsData[1].pinching) {
+                        if (handsData[0].pos.distanceTo(handsData[1].pos) < 4.0) { 
                             hologramState = "scaling"; earth.visible = true;
-                            earth.position.lerpVectors(parsedHands[0].pos, parsedHands[1].pos, 0.5);
+                            earth.position.lerpVectors(handsData[0].pos, handsData[1].pos, 0.5);
                         }
                     }
-                } else if (hologramState === "scaling") {
+                } 
+                else if (hologramState === "scaling") {
                     statusText.innerHTML = "<b>BOYUTLANDIRILIYOR</b><span class='hint'>Büyütmek için parmaklarınız kıstırılmış haldeyken iki elinizi birbirinden uzaklaştırın.</span>";
-                    if (hCount === 2 && parsedHands[0].pinching && parsedHands[1].pinching) {
-                        earth.scale.setScalar(parsedHands[0].pos.distanceTo(parsedHands[1].pos) * 0.5); 
-                        earth.position.lerpVectors(parsedHands[0].pos, parsedHands[1].pos, 0.5); 
+                    
+                    if (hCount === 2 && handsData[0].pinching && handsData[1].pinching) {
+                        let dist = handsData[0].pos.distanceTo(handsData[1].pos);
+                        earth.scale.setScalar(dist * 0.5); 
+                        earth.position.lerpVectors(handsData[0].pos, handsData[1].pos, 0.5); 
                     } else { hologramState = "floating"; }
-                } else { 
+                } 
+                else { 
                     let interacting = false;
-                    if (hCount === 2 && parsedHands[0].pinching && parsedHands[1].pinching) {
+                    if (hCount === 2 && handsData[0].pinching && handsData[1].pinching) {
                         hologramState = "scaling"; interacting = true;
                     } else {
                         for (let i = 0; i < hCount; i++) {
-                            let h = parsedHands[i];
+                            let h = handsData[i];
                             let distToEarth = h.pos.distanceTo(earth.position);
                             let hitbox = earth.scale.x * 1.5 + 1.0; 
+
                             if (h.pinching && distToEarth < hitbox) {
                                 hologramState = "dragging"; 
                                 statusText.innerHTML = "<b>SÜRÜKLENİYOR</b><span class='hint'>Dünyayı ekranda istediğiniz bir köşeye taşıyıp parmaklarınızı açarak bırakın.</span>";
                                 earth.position.lerp(h.pos, 0.3); interacting = true; break;
-                            } else if (!h.pinching && distToEarth < hitbox + 2.0) {
+                            } 
+                            else if (!h.pinching && distToEarth < hitbox + 2.0) {
                                 hologramState = "rotating"; 
                                 statusText.innerHTML = "<b>DÖNDÜRÜLÜYOR</b><span class='hint'>Elinizi açık tutarak Dünyanın yönünü değiştirebilirsiniz.</span>";
-                                targetRotY = ((1.0 - h.palm.x) - 0.5) * Math.PI * 4;
+                                targetRotY = ( (1.0 - h.palm.x) - 0.5) * Math.PI * 4;
                                 targetRotX = (h.palm.y - 0.5) * Math.PI * 2;
                                 interacting = true; break;
                             }
@@ -249,24 +202,20 @@
                         statusText.innerHTML = "<b>DÜNYA HAZIR</b><span class='hint'><b>Sürüklemek için:</b> Tek elle kıstırın.<br><b>Döndürmek için:</b> Elinizi açık şekilde yanına getirin.<br><b>Boyutlandırmak için:</b> İki elinizle birden kıstırın.</span>"; 
                     }
                 }
-
-                if (hologramState === "rotating") {
-                    earth.rotation.y += (targetRotY - earth.rotation.y) * 0.1;
-                    earth.rotation.x += (targetRotX - earth.rotation.x) * 0.1;
-                } else if (hologramState === "floating" && earth.visible) {
-                    earth.rotation.y += 0.005;
-                }
-                renderer.render(scene, camera3D);
             }
-
+            
+            // ==========================================
+            // MOD 2: SS ALICI VİZÖR (EĞİTİCİ METİNLER)
+            // ==========================================
             else if (currentMode === 2) {
                 if (hCount === 2) {
-                    const hand1 = handsData[0], hand2 = handsData[1];
-                    const fist1 = isFist(hand1), fist2 = isFist(hand2);
+                    const hand1 = results.multiHandLandmarks[0];
+                    const hand2 = results.multiHandLandmarks[1];
+                    const fist1 = isFist(hand1);
+                    const fist2 = isFist(hand2);
 
-                    // ÇİFTE AYNALAMA KALDIRILDI (1.0 - x silindi)
-                    let x1 = hand1[9].x * w, y1 = hand1[9].y * h;
-                    let x2 = hand2[9].x * w, y2 = hand2[9].y * h;
+                    let x1 = (1.0 - hand1[9].x) * w; let y1 = hand1[9].y * h;
+                    let x2 = (1.0 - hand2[9].x) * w; let y2 = hand2[9].y * h;
 
                     let startX = Math.min(x1, x2), startY = Math.min(y1, y2);
                     let endX = Math.max(x1, x2), endY = Math.max(y1, y2);
@@ -282,143 +231,54 @@
 
                     let boxW = endX - startX, boxH = endY - startY;
 
-                    bgCtx.drawImage(videoElement, 0, 0, w, h);
                     if (boxW > 0 && boxH > 0) {
                         bgCtx.save(); bgCtx.beginPath(); bgCtx.rect(startX, startY, boxW, boxH); bgCtx.clip();
-                        bgCtx.filter = 'grayscale(100%)'; bgCtx.drawImage(videoElement, 0, 0, w, h); bgCtx.restore();
+                        bgCtx.filter = 'grayscale(100%)'; bgCtx.drawImage(results.image, 0, 0, w, h); bgCtx.restore();
 
                         bgCtx.lineWidth = (fist1 && fist2) ? 6 : 4;
                         bgCtx.strokeStyle = (fist1 && fist2) ? 'red' : 'yellow';
                         bgCtx.strokeRect(startX, startY, boxW, boxH);
                         
+                        // Eğitim Metinleri
                         statusText.innerHTML = (fist1 && fist2) ? "<b>📸 ÇEKİLİYOR... SABİT DURUN!</b><span class='hint'>Fotoğraf galeriye indiriliyor...</span>" : "<b>HEDEFLENİYOR</b><span class='hint'>Fotoğraf çekmek için iki elinizi de aynı anda <b>YUMRUK</b> yapın!</span>";
 
-                        const tn = Date.now();
-                        if (fist1 && fist2 && (tn - lastPicTime > 2000)) {
-                            flashFrames = 4; lastPicTime = tn;
+                        const now = Date.now();
+                        if (fist1 && fist2 && (now - lastPicTime > 2000)) {
+                            flashFrames = 4; lastPicTime = now;
+                            
                             const tempCanvas = document.createElement('canvas');
                             tempCanvas.width = boxW; tempCanvas.height = boxH;
                             const tCtx = tempCanvas.getContext('2d');
                             tCtx.translate(boxW, 0); tCtx.scale(-1, 1); 
                             tCtx.drawImage(bgCanvas, startX, startY, boxW, boxH, 0, 0, boxW, boxH);
                             tCtx.setTransform(1, 0, 0, 1, 0, 0); 
+                            
                             tCtx.font = "bold 18px Courier New"; tCtx.fillStyle = "rgba(0, 255, 255, 0.9)";
                             tCtx.textAlign = "right"; tCtx.fillText("by Toygun Galyan", boxW - 15, boxH - 15);
+                            
                             const link = document.createElement('a');
-                            link.download = `vizor_ss_${tn}.jpg`; link.href = tempCanvas.toDataURL('image/jpeg'); link.click();
+                            link.download = `vizor_ss_${now}.jpg`;
+                            link.href = tempCanvas.toDataURL('image/jpeg');
+                            link.click();
                         }
                     }
                 } else {
-                    bgCtx.drawImage(videoElement, 0, 0, w, h);
-                    prevX1 = 0; statusText.innerHTML = "<b>ELLER BEKLENİYOR</b><span class='hint'>Lütfen kameraya iki elinizi de açık şekilde gösterin.</span>";
+                    prevX1 = 0; 
+                    statusText.innerHTML = "<b>ELLER BEKLENİYOR</b><span class='hint'>Lütfen kameraya iki elinizi de açık şekilde gösterin.</span>";
                 }
+
                 if (flashFrames > 0) {
-                    bgCtx.fillStyle = 'rgba(255, 255, 255, 0.9)'; bgCtx.fillRect(0, 0, w, h); flashFrames--;
-                }
-            }
-
-            else if (currentMode === 3) {
-                let handPinching = false, handX = 0, handY = 0, handAngle = -10;
-                if (hCount > 0) {
-                    let hl = handsData[0];
-                    // ÇİFTE AYNALAMA KALDIRILDI
-                    handX = ((hl[4].x + hl[8].x)/2) * w; 
-                    handY = ((hl[4].y + hl[8].y)/2) * h;
-                    handPinching = Math.hypot(hl[4].x - hl[8].x, hl[4].y - hl[8].y) < 0.08; 
-                    
-                    // AÇI DOĞRUDAN ALINIYOR (Ters Yöne Gitme Düzeltildi)
-                    let dx = hl[8].x - hl[4].x;
-                    let dy = hl[8].y - hl[4].y;
-                    handAngle = Math.atan2(dy, dx) * (180 / Math.PI);
-                }
-
-                let mouthOpen = false, mouthX = 0, mouthY = 0;
-                if (faceData && faceData.length > 0) {
-                    let fl = faceData[0];
-                    let topLip = fl[13], botLip = fl[14];
-                    // ÇİFTE AYNALAMA KALDIRILDI
-                    mouthX = ((topLip.x + botLip.x)/2) * w;
-                    mouthY = ((topLip.y + botLip.y)/2) * h;
-                    mouthOpen = Math.hypot(topLip.x - botLip.x, topLip.y - botLip.y) > 0.015; 
-                }
-
-                if (cigAttachedTo === "mouth") {
-                    if (mouthX !== 0) {
-                        cigAngle = -10 + Math.sin(now * 0.005) * 4;
-                        cigPosX = mouthX + Math.cos(cigAngle * Math.PI/180) * cigLength/2;
-                        cigPosY = mouthY + Math.sin(cigAngle * Math.PI/180) * cigLength/2;
-                        
-                        if (mouthOpen) {
-                            statusText.innerHTML = "<b>İÇİLİYOR... YANIYOR</b><span class='hint'>Dumanı üflemek için ağzınızı kapatın. Sigarayı elinize almak için parmaklarınızla tutup (kıstırıp) çekin.</span>";
-                        } else {
-                            statusText.innerHTML = "<b>DUDAGINIZDA</b><span class='hint'>Nefes almak (içmek) için ağzınızı açın. Elinize almak için parmaklarınızla tutup (kıstırıp) çekin.</span>";
-                        }
-
-                        if (handPinching && handX !== 0 && Math.hypot(handX - mouthX, handY - mouthY) < 100) {
-                            cigAttachedTo = "hand";
-                        }
-                    } else { 
-                        statusText.innerHTML = "<b>YÜZ BEKLENİYOR</b><span class='hint'>Lütfen kameraya doğru bakın. Aydınlık bir ortamda olduğunuzdan emin olun.</span>"; 
-                    }
-                } else { 
-                    statusText.innerHTML = "<b>ELİNİZDE (SÜRÜKLENİYOR)</b><span class='hint'>Ağzınıza geri dönmesi için parmaklarınızı (kıstırmayı) açın.</span>";
-                    
-                    if (!handPinching) {
-                        cigAttachedTo = "mouth"; // Bırakıldığı an ağza ışınlanır
-                    } else {
-                        cigAngle = handAngle; // Elin açısına mükemmel uyum sağlar
-                        cigPosX = handX + Math.cos(cigAngle * Math.PI/180) * cigLength*0.22;
-                        cigPosY = handY + Math.sin(cigAngle * Math.PI/180) * cigLength*0.22;
-                    }
-                }
-
-                let tipX = cigPosX + Math.cos(cigAngle * Math.PI/180) * cigLength/2;
-                let tipY = cigPosY + Math.sin(cigAngle * Math.PI/180) * cigLength/2;
-
-                if (cigAttachedTo === "mouth" && mouthOpen) {
-                    cigLength = Math.max(34, cigLength - 24 * dt);
-                    cigEmberGlow = Math.min(1.0, cigEmberGlow + dt * 3.0);
-                    if (Math.random() < 0.6) smokeSys.spawn(tipX, tipY, 1, "normal");
-                    wasMouthOpen = true;
-                } else {
-                    cigEmberGlow = Math.max(0.15, cigEmberGlow - dt * 1.0);
-                    if (Math.random() < 0.05) smokeSys.spawn(tipX, tipY, 1, "normal");
-                    if (wasMouthOpen && now > blowCooldown) {
-                         // DEVASA DUMAN ÜFLEME SİSTEMİ
-                         smokeSys.spawn(mouthX, mouthY, 60, "blow"); 
-                         blowCooldown = now + 1500;
-                    }
-                    wasMouthOpen = false;
-                }
-                if (cigLength <= 34.5 && Math.random() < 0.01) cigLength = 130; 
-
-                smokeSys.update(dt);
-                smokeSys.render(bgCtx);
-
-                if(cigPosX !== 0) {
-                    bgCtx.save(); bgCtx.translate(cigPosX, cigPosY); bgCtx.rotate(cigAngle * Math.PI/180);
-                    bgCtx.fillStyle = '#e6e6e6'; bgCtx.fillRect(-cigLength/2, -4, cigLength, 8);
-                    bgCtx.strokeStyle = '#999999'; bgCtx.strokeRect(-cigLength/2, -4, cigLength, 8);
-                    let fLen = Math.min(26, cigLength * 0.3);
-                    bgCtx.fillStyle = '#d48d42'; bgCtx.fillRect(-cigLength/2, -4, fLen, 8);
-                    let r = 150 + 105*cigEmberGlow, g = 80 + 100*cigEmberGlow, b = 50 + 130*cigEmberGlow;
-                    bgCtx.beginPath(); bgCtx.arc(cigLength/2, 0, 4 + 3 * cigEmberGlow, 0, 2*Math.PI);
-                    bgCtx.fillStyle = `rgba(${r}, ${g}, ${b}, 1.0)`; bgCtx.fill();
-                    bgCtx.beginPath(); bgCtx.arc(cigLength/2, 0, 10 + 8 * cigEmberGlow, 0, 2*Math.PI);
-                    bgCtx.fillStyle = `rgba(${r}, ${g}, ${b}, ${0.3 * cigEmberGlow})`; bgCtx.fill();
-                    bgCtx.restore();
+                    bgCtx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                    bgCtx.fillRect(0, 0, w, h);
+                    flashFrames--;
                 }
             }
             bgCtx.restore();
         }
 
         const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-        hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
-        hands.onResults((r) => { handsData = r.multiHandLandmarks; });
-
-        const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
-        faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: false, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
-        faceMesh.onResults((r) => { faceData = r.multiFaceLandmarks; });
+        hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
+        hands.onResults(onResults);
 
         async function startApp(mode) {
             currentMode = mode;
@@ -426,14 +286,12 @@
             document.getElementById('ui-layer').style.display = 'flex';
             
             if (mode === 1) {
-                appTitle.innerText = "MOD 1: HOLOGRAM DÜNYA"; appTitle.style.color = '#00ffff';
+                appTitle.innerText = "MOD 1: HOLOGRAM DÜNYA";
                 document.getElementById('webgl-container').style.display = 'block';
-            } else if (mode === 2) {
-                appTitle.innerText = "MOD 2: SS ALICI VİZÖR"; appTitle.style.color = '#ff0055';
+            } else {
+                appTitle.innerText = "MOD 2: SS ALICI VİZÖR";
                 document.getElementById('webgl-container').style.display = 'none';
-            } else if (mode === 3) {
-                appTitle.innerText = "MOD 3: SİGARA SİMÜLASYONU"; appTitle.style.color = '#00ff66';
-                document.getElementById('webgl-container').style.display = 'none';
+                appTitle.style.color = '#ff0055';
             }
 
             try {
@@ -441,23 +299,11 @@
                 videoElement.srcObject = stream;
                 await videoElement.play();
                 
-                async function processAI() {
-                    if (videoElement.readyState >= 2) {
-                        try {
-                            if (currentMode === 3) {
-                                await faceMesh.send({image: videoElement});
-                                await hands.send({image: videoElement});
-                            } else {
-                                await hands.send({image: videoElement});
-                            }
-                        } catch (err) {
-                            console.error("Yapay Zeka İşleme Hatası:", err);
-                        }
-                    }
-                    requestAnimationFrame(processAI);
+                async function processFrame() {
+                    if (videoElement.readyState >= 2) await hands.send({image: videoElement});
+                    requestAnimationFrame(processFrame);
                 }
-                processAI();
-                renderLoop(); 
+                processFrame();
             } catch (err) {
                 statusText.innerHTML = "<b>KAMERA HATASI</b><span class='hint'>Lütfen tarayıcı ayarlarından kameraya izin verin.</span>";
             }
