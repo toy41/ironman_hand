@@ -65,33 +65,60 @@
         let handsData = null;
         let faceData = null;
 
+        // ==========================================
+        // GELİŞTİRİLMİŞ DUMAN MOTORU (PARTICLE SYSTEM)
+        // ==========================================
         class Particle {
-            constructor(x, y) {
-                this.x = x + (Math.random() - 0.5) * 16;
-                this.y = y + (Math.random() - 0.5) * 10;
-                this.vx = (Math.random() - 0.5) * 1.5;
-                this.vy = -(Math.random() * 2.0 + 1.0);
-                this.radius = Math.random() * 8 + 10;
-                this.alpha = Math.random() * 0.3 + 0.4;
+            constructor(x, y, type="normal") {
+                this.type = type;
+                if (type === "blow") {
+                    // Üfleme Modu: Çok daha geniş, yoğun ve uzun ömürlü
+                    this.x = x + (Math.random() - 0.5) * 50;
+                    this.y = y + (Math.random() - 0.5) * 20;
+                    this.vx = (Math.random() - 0.5) * 8.0; // Sağa sola güçlü yayılım
+                    this.vy = -(Math.random() * 4.0 + 1.5); // Yukarı ve dışa doğru
+                    this.radius = Math.random() * 25 + 20; // Kocaman bulutlar
+                    this.maxAge = Math.random() * 5.0 + 5.0; // 5 ile 10 saniye arası yaşar
+                    this.alpha = Math.random() * 0.5 + 0.5; // Çok yoğun başlangıç
+                } else {
+                    // Normal Yanma Modu: İnce ve süzülen
+                    this.x = x + (Math.random() - 0.5) * 16;
+                    this.y = y + (Math.random() - 0.5) * 10;
+                    this.vx = (Math.random() - 0.5) * 1.5;
+                    this.vy = -(Math.random() * 2.0 + 1.0);
+                    this.radius = Math.random() * 8 + 10;
+                    this.maxAge = Math.random() * 2.0 + 3.0; // 2-3 saniye
+                    this.alpha = Math.random() * 0.3 + 0.4;
+                }
                 this.age = 0;
-                this.maxAge = Math.random() * 2.0 + 3.0;
             }
             update(dt) {
                 this.age += dt;
                 this.x += this.vx;
                 this.y += this.vy;
-                this.vx += (Math.random() - 0.5) * 0.2;
-                this.vy -= 0.05; 
-                this.radius += 0.8;
+                
+                if (this.type === "blow") {
+                    this.vx += (Math.random() - 0.5) * 0.5; // Rüzgar efekti
+                    this.vy -= 0.03; // Yavaşça yükselme ivmesi
+                    this.radius += 1.5; // Bulut gibi giderek açılır
+                } else {
+                    this.vx += (Math.random() - 0.5) * 0.2;
+                    this.vy -= 0.05; 
+                    this.radius += 0.8;
+                }
+                
                 let lifeRatio = this.age / this.maxAge;
-                this.alpha = Math.max(0, (1.0 - lifeRatio) * 0.7);
+                let maxAlpha = this.type === "blow" ? 0.8 : 0.7;
+                this.alpha = Math.max(0, (1.0 - lifeRatio) * maxAlpha);
             }
             isDead() { return this.age >= this.maxAge || this.alpha <= 0.01; }
         }
         
         class SmokeSystem {
             constructor() { this.particles = []; }
-            spawn(x, y, count) { for(let i=0; i<count; i++) this.particles.push(new Particle(x, y)); }
+            spawn(x, y, count, type="normal") { 
+                for(let i=0; i<count; i++) this.particles.push(new Particle(x, y, type)); 
+            }
             update(dt) {
                 this.particles.forEach(p => p.update(dt));
                 this.particles = this.particles.filter(p => !p.isDead());
@@ -99,7 +126,7 @@
             render(ctx) {
                 if(this.particles.length === 0) return;
                 ctx.save();
-                ctx.filter = 'blur(6px)';
+                ctx.filter = 'blur(8px)';
                 this.particles.forEach(p => {
                     ctx.beginPath();
                     ctx.arc(p.x, p.y, p.radius, 0, 2*Math.PI);
@@ -175,6 +202,7 @@
                 let parsedHands = [];
                 for(let i=0; i<hCount; i++) {
                     let hl = handsData[i];
+                    // 3D için 1.0 eksi X mantığı korunuyor
                     let hx = 1.0 - ((hl[4].x + hl[8].x) / 2), hy = (hl[4].y + hl[8].y) / 2;
                     let pinchDist = Math.hypot(hl[4].x - hl[8].x, hl[4].y - hl[8].y);
                     parsedHands.push({ pos: getWorldPos(hx, hy), pinching: pinchDist < 0.08, palm: hl[9] });
@@ -236,8 +264,9 @@
                     const hand1 = handsData[0], hand2 = handsData[1];
                     const fist1 = isFist(hand1), fist2 = isFist(hand2);
 
-                    let x1 = (1.0 - hand1[9].x) * w, y1 = hand1[9].y * h;
-                    let x2 = (1.0 - hand2[9].x) * w, y2 = hand2[9].y * h;
+                    // ÇİFTE AYNALAMA KALDIRILDI (1.0 - x silindi)
+                    let x1 = hand1[9].x * w, y1 = hand1[9].y * h;
+                    let x2 = hand2[9].x * w, y2 = hand2[9].y * h;
 
                     let startX = Math.min(x1, x2), startY = Math.min(y1, y2);
                     let endX = Math.max(x1, x2), endY = Math.max(y1, y2);
@@ -292,12 +321,13 @@
                 let handPinching = false, handX = 0, handY = 0, handAngle = -10;
                 if (hCount > 0) {
                     let hl = handsData[0];
-                    handX = (1.0 - (hl[4].x + hl[8].x)/2) * w;
+                    // ÇİFTE AYNALAMA KALDIRILDI
+                    handX = ((hl[4].x + hl[8].x)/2) * w; 
                     handY = ((hl[4].y + hl[8].y)/2) * h;
                     handPinching = Math.hypot(hl[4].x - hl[8].x, hl[4].y - hl[8].y) < 0.08; 
                     
-                    // YENİ EKLENEN KISIM: Ters Yöne Gitme (Ayna) Düzeltmesi
-                    let dx = (1.0 - hl[8].x) - (1.0 - hl[4].x);
+                    // AÇI DOĞRUDAN ALINIYOR (Ters Yöne Gitme Düzeltildi)
+                    let dx = hl[8].x - hl[4].x;
                     let dy = hl[8].y - hl[4].y;
                     handAngle = Math.atan2(dy, dx) * (180 / Math.PI);
                 }
@@ -306,7 +336,8 @@
                 if (faceData && faceData.length > 0) {
                     let fl = faceData[0];
                     let topLip = fl[13], botLip = fl[14];
-                    mouthX = (1.0 - (topLip.x + botLip.x)/2) * w;
+                    // ÇİFTE AYNALAMA KALDIRILDI
+                    mouthX = ((topLip.x + botLip.x)/2) * w;
                     mouthY = ((topLip.y + botLip.y)/2) * h;
                     mouthOpen = Math.hypot(topLip.x - botLip.x, topLip.y - botLip.y) > 0.015; 
                 }
@@ -332,13 +363,10 @@
                 } else { 
                     statusText.innerHTML = "<b>ELİNİZDE (SÜRÜKLENİYOR)</b><span class='hint'>Ağzınıza geri dönmesi için parmaklarınızı (kıstırmayı) açın.</span>";
                     
-                    // YENİ EKLENEN KISIM: Bırakınca Ağza Dönme Düzeltmesi
                     if (!handPinching) {
-                        // Orijinal kodundaki kural: Parmaklar açıldığında nerede olursa olsun ağza döner!
-                        cigAttachedTo = "mouth";
+                        cigAttachedTo = "mouth"; // Bırakıldığı an ağza ışınlanır
                     } else {
-                        // Sigaranın açısını elin (parmakların) açısına eşitle
-                        cigAngle = handAngle;
+                        cigAngle = handAngle; // Elin açısına mükemmel uyum sağlar
                         cigPosX = handX + Math.cos(cigAngle * Math.PI/180) * cigLength*0.22;
                         cigPosY = handY + Math.sin(cigAngle * Math.PI/180) * cigLength*0.22;
                     }
@@ -350,14 +378,15 @@
                 if (cigAttachedTo === "mouth" && mouthOpen) {
                     cigLength = Math.max(34, cigLength - 24 * dt);
                     cigEmberGlow = Math.min(1.0, cigEmberGlow + dt * 3.0);
-                    if (Math.random() < 0.6) smokeSys.spawn(tipX, tipY, 1);
+                    if (Math.random() < 0.6) smokeSys.spawn(tipX, tipY, 1, "normal");
                     wasMouthOpen = true;
                 } else {
                     cigEmberGlow = Math.max(0.15, cigEmberGlow - dt * 1.0);
-                    if (Math.random() < 0.05) smokeSys.spawn(tipX, tipY, 1);
+                    if (Math.random() < 0.05) smokeSys.spawn(tipX, tipY, 1, "normal");
                     if (wasMouthOpen && now > blowCooldown) {
-                         smokeSys.spawn(mouthX, mouthY, 20); 
-                         blowCooldown = now + 1000;
+                         // DEVASA DUMAN ÜFLEME SİSTEMİ
+                         smokeSys.spawn(mouthX, mouthY, 60, "blow"); 
+                         blowCooldown = now + 1500;
                     }
                     wasMouthOpen = false;
                 }
