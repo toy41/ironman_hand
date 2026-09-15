@@ -289,12 +289,17 @@
             }
 
             else if (currentMode === 3) {
-                let handPinching = false, handX = 0, handY = 0;
+                let handPinching = false, handX = 0, handY = 0, handAngle = -10;
                 if (hCount > 0) {
                     let hl = handsData[0];
                     handX = (1.0 - (hl[4].x + hl[8].x)/2) * w;
                     handY = ((hl[4].y + hl[8].y)/2) * h;
                     handPinching = Math.hypot(hl[4].x - hl[8].x, hl[4].y - hl[8].y) < 0.08; 
+                    
+                    // YENİ EKLENEN KISIM: Ters Yöne Gitme (Ayna) Düzeltmesi
+                    let dx = (1.0 - hl[8].x) - (1.0 - hl[4].x);
+                    let dy = hl[8].y - hl[4].y;
+                    handAngle = Math.atan2(dy, dx) * (180 / Math.PI);
                 }
 
                 let mouthOpen = false, mouthX = 0, mouthY = 0;
@@ -325,13 +330,15 @@
                         statusText.innerHTML = "<b>YÜZ BEKLENİYOR</b><span class='hint'>Lütfen kameraya doğru bakın. Aydınlık bir ortamda olduğunuzdan emin olun.</span>"; 
                     }
                 } else { 
-                    statusText.innerHTML = "<b>ELİNİZDE (SÜRÜKLENİYOR)</b><span class='hint'>Tekrar içmek için dudaklarınıza götürüp parmaklarınızı (kıstırmayı) açın.</span>";
+                    statusText.innerHTML = "<b>ELİNİZDE (SÜRÜKLENİYOR)</b><span class='hint'>Ağzınıza geri dönmesi için parmaklarınızı (kıstırmayı) açın.</span>";
                     
+                    // YENİ EKLENEN KISIM: Bırakınca Ağza Dönme Düzeltmesi
                     if (!handPinching) {
-                        if (mouthX !== 0 && Math.hypot(handX - mouthX, handY - mouthY) < 120) {
-                            cigAttachedTo = "mouth";
-                        }
+                        // Orijinal kodundaki kural: Parmaklar açıldığında nerede olursa olsun ağza döner!
+                        cigAttachedTo = "mouth";
                     } else {
+                        // Sigaranın açısını elin (parmakların) açısına eşitle
+                        cigAngle = handAngle;
                         cigPosX = handX + Math.cos(cigAngle * Math.PI/180) * cigLength*0.22;
                         cigPosY = handY + Math.sin(cigAngle * Math.PI/180) * cigLength*0.22;
                     }
@@ -380,7 +387,6 @@
         hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
         hands.onResults((r) => { handsData = r.multiHandLandmarks; });
 
-        // ÇÖZÜM BURADA: refineLandmarks kapatıldı.
         const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
         faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: false, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
         faceMesh.onResults((r) => { faceData = r.multiFaceLandmarks; });
@@ -406,7 +412,6 @@
                 videoElement.srcObject = stream;
                 await videoElement.play();
                 
-                // ÇÖZÜM BURADA: Promise.all kaldırıldı, YZ'ler sırayla (sequential) çalışıyor.
                 async function processAI() {
                     if (videoElement.readyState >= 2) {
                         try {
