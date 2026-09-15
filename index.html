@@ -4,28 +4,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>VisionHand WebAR - Toygun Galyan</title>
-    <!-- Kütüphaneler: Three.js, MediaPipe Hands ve Face Mesh -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
     <style>
         body { margin: 0; padding: 0; background-color: black; overflow: hidden; font-family: 'Courier New', Courier, monospace; color: white; }
-        
         video { display: none; }
         #bg-canvas { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; transform: scaleX(-1); object-fit: cover; }
         #webgl-container { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 2; pointer-events: none; }
-        
         #ui-layer { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 10; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; }
         #status-box { padding: 20px; text-shadow: 0 0 5px black, 0 0 10px black; background: linear-gradient(180deg, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0) 100%); }
         #app-title { font-size: 22px; font-weight: bold; margin-bottom: 10px; text-transform: uppercase;}
-        
         #status-text { font-size: 18px; color: #ffcc00; line-height: 1.4; }
         .hint { font-size: 14px; color: #ffffff; display: block; margin-top: 5px; font-style: italic; }
-        
         #hud-signature { padding: 20px; text-align: right; color: #00ffff; text-shadow: 0 0 5px #00ffff, 0 0 10px #00ffff; font-size: 16px; letter-spacing: 2px; font-weight: bold; }
         #hud-signature span { font-size: 10px; color: #ffffff; text-shadow: none; letter-spacing: 1px; }
-
         #menu-screen { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 10, 20, 0.95); z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: auto; }
         .menu-btn { background: transparent; border: 2px solid #00ffff; color: #00ffff; padding: 15px 30px; margin: 10px; font-size: 18px; font-family: 'Courier New', Courier, monospace; font-weight: bold; cursor: pointer; transition: 0.3s; width: 80%; max-width: 350px; text-align: center; text-transform: uppercase; }
         .menu-btn:hover { background: #00ffff; color: black; box-shadow: 0 0 15px #00ffff; }
@@ -53,7 +47,7 @@
     <div id="ui-layer" style="display: none;">
         <div id="status-box">
             <div id="app-title" style="color:#00ffff;">BAŞLATILIYOR...</div>
-            <div id="status-text">Kamera bekleniyor...</div>
+            <div id="status-text">Yapay Zeka Modelleri Yükleniyor...</div>
         </div>
         <div id="hud-signature">
             <span>DEVELOPED BY</span><br>TOYGUN GALYAN
@@ -71,15 +65,12 @@
         let handsData = null;
         let faceData = null;
 
-        // ==========================================
-        // DUMAN MOTORU (mainsigara.py'den JavaScript'e çevrildi)
-        // ==========================================
         class Particle {
             constructor(x, y) {
                 this.x = x + (Math.random() - 0.5) * 16;
                 this.y = y + (Math.random() - 0.5) * 10;
                 this.vx = (Math.random() - 0.5) * 1.5;
-                this.vy = -(Math.random() * 2.0 + 1.0); // Yukarı doğru yükseliş
+                this.vy = -(Math.random() * 2.0 + 1.0);
                 this.radius = Math.random() * 8 + 10;
                 this.alpha = Math.random() * 0.3 + 0.4;
                 this.age = 0;
@@ -119,17 +110,11 @@
             }
         }
 
-        // ==========================================
-        // SİGARA SİMÜLASYONU DEĞİŞKENLERİ
-        // ==========================================
         let cigLength = 130, cigAttachedTo = "mouth", cigEmberGlow = 0.25;
         let cigPosX = 0, cigPosY = 0, cigAngle = -10;
         let smokeSys = new SmokeSystem();
         let wasMouthOpen = false, blowCooldown = 0;
 
-        // ==========================================
-        // THREE.JS (DÜNYA) KURULUMU
-        // ==========================================
         const scene = new THREE.Scene();
         const camera3D = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
         camera3D.position.z = 10;
@@ -155,9 +140,6 @@
             return new THREE.Vector3((x - 0.5) * width, -(y - 0.5) * height, 0);
         }
 
-        // ==========================================
-        // VİZÖR DEĞİŞKENLERİ
-        // ==========================================
         let flashFrames = 0, lastPicTime = 0, prevX1=0, prevY1=0, prevX2=0, prevY2=0;
         const smoothing = 0.6;
         function isFist(landmarks) {
@@ -167,9 +149,6 @@
             return curled >= 3;
         }
 
-        // ==========================================
-        // ANA MERKEZİ RENDER DÖNGÜSÜ
-        // ==========================================
         let lastTime = performance.now();
         function renderLoop() {
             requestAnimationFrame(renderLoop);
@@ -192,7 +171,6 @@
 
             let hCount = handsData ? handsData.length : 0;
 
-            // --- MOD 1: DÜNYA HOLOGRAMI ---
             if (currentMode === 1) {
                 let parsedHands = [];
                 for(let i=0; i<hCount; i++) {
@@ -253,7 +231,6 @@
                 renderer.render(scene, camera3D);
             }
 
-            // --- MOD 2: SS VİZÖR ---
             else if (currentMode === 2) {
                 if (hCount === 2) {
                     const hand1 = handsData[0], hand2 = handsData[1];
@@ -311,29 +288,24 @@
                 }
             }
 
-            // --- MOD 3: SİGARA SİMÜLASYONU ---
             else if (currentMode === 3) {
                 let handPinching = false, handX = 0, handY = 0;
                 if (hCount > 0) {
                     let hl = handsData[0];
                     handX = (1.0 - (hl[4].x + hl[8].x)/2) * w;
                     handY = ((hl[4].y + hl[8].y)/2) * h;
-                    // Python'daki PINCH_DISTANCE_PX algılamasının web karşılığı:
                     handPinching = Math.hypot(hl[4].x - hl[8].x, hl[4].y - hl[8].y) < 0.08; 
                 }
 
                 let mouthOpen = false, mouthX = 0, mouthY = 0;
                 if (faceData && faceData.length > 0) {
                     let fl = faceData[0];
-                    // Dudakların orta üst ve alt noktaları (13 ve 14 numaralı yüz landmarkları)
                     let topLip = fl[13], botLip = fl[14];
                     mouthX = (1.0 - (topLip.x + botLip.x)/2) * w;
                     mouthY = ((topLip.y + botLip.y)/2) * h;
-                    // Ağız açıklığı (MOUTH_OPEN_THRESHOLD)
                     mouthOpen = Math.hypot(topLip.x - botLip.x, topLip.y - botLip.y) > 0.015; 
                 }
 
-                // Python'daki "attached_to" mantığı:
                 if (cigAttachedTo === "mouth") {
                     if (mouthX !== 0) {
                         cigAngle = -10 + Math.sin(now * 0.005) * 4;
@@ -346,18 +318,16 @@
                             statusText.innerHTML = "<b>DUDAGINIZDA</b><span class='hint'>Nefes almak (içmek) için ağzınızı açın. Elinize almak için parmaklarınızla tutup (kıstırıp) çekin.</span>";
                         }
 
-                        // Python'daki GRAB_DISTANCE mantığı:
                         if (handPinching && handX !== 0 && Math.hypot(handX - mouthX, handY - mouthY) < 100) {
                             cigAttachedTo = "hand";
                         }
                     } else { 
-                        statusText.innerHTML = "<b>YÜZ BEKLENİYOR</b><span class='hint'>Lütfen kameraya doğru bakın.</span>"; 
+                        statusText.innerHTML = "<b>YÜZ BEKLENİYOR</b><span class='hint'>Lütfen kameraya doğru bakın. Aydınlık bir ortamda olduğunuzdan emin olun.</span>"; 
                     }
                 } else { 
                     statusText.innerHTML = "<b>ELİNİZDE (SÜRÜKLENİYOR)</b><span class='hint'>Tekrar içmek için dudaklarınıza götürüp parmaklarınızı (kıstırmayı) açın.</span>";
                     
                     if (!handPinching) {
-                        // Python'daki NEAR_MOUTH_DISTANCE mantığı:
                         if (mouthX !== 0 && Math.hypot(handX - mouthX, handY - mouthY) < 120) {
                             cigAttachedTo = "mouth";
                         }
@@ -370,7 +340,6 @@
                 let tipX = cigPosX + Math.cos(cigAngle * Math.PI/180) * cigLength/2;
                 let tipY = cigPosY + Math.sin(cigAngle * Math.PI/180) * cigLength/2;
 
-                // Sigara içildiğinde kısalma ve partikül çıkarma (BURN_RATE_PX_PER_SEC)
                 if (cigAttachedTo === "mouth" && mouthOpen) {
                     cigLength = Math.max(34, cigLength - 24 * dt);
                     cigEmberGlow = Math.min(1.0, cigEmberGlow + dt * 3.0);
@@ -380,48 +349,40 @@
                     cigEmberGlow = Math.max(0.15, cigEmberGlow - dt * 1.0);
                     if (Math.random() < 0.05) smokeSys.spawn(tipX, tipY, 1);
                     if (wasMouthOpen && now > blowCooldown) {
-                         smokeSys.spawn(mouthX, mouthY, 20); // Dumanı üfleme efekti
+                         smokeSys.spawn(mouthX, mouthY, 20); 
                          blowCooldown = now + 1000;
                     }
                     wasMouthOpen = false;
                 }
-                if (cigLength <= 34.5 && Math.random() < 0.01) cigLength = 130; // Bittiğinde yenile
+                if (cigLength <= 34.5 && Math.random() < 0.01) cigLength = 130; 
 
                 smokeSys.update(dt);
                 smokeSys.render(bgCtx);
 
-                // Sigaranın Canvas Çizimi
                 if(cigPosX !== 0) {
                     bgCtx.save(); bgCtx.translate(cigPosX, cigPosY); bgCtx.rotate(cigAngle * Math.PI/180);
-                    
                     bgCtx.fillStyle = '#e6e6e6'; bgCtx.fillRect(-cigLength/2, -4, cigLength, 8);
                     bgCtx.strokeStyle = '#999999'; bgCtx.strokeRect(-cigLength/2, -4, cigLength, 8);
-                    
                     let fLen = Math.min(26, cigLength * 0.3);
                     bgCtx.fillStyle = '#d48d42'; bgCtx.fillRect(-cigLength/2, -4, fLen, 8);
-                    
                     let r = 150 + 105*cigEmberGlow, g = 80 + 100*cigEmberGlow, b = 50 + 130*cigEmberGlow;
                     bgCtx.beginPath(); bgCtx.arc(cigLength/2, 0, 4 + 3 * cigEmberGlow, 0, 2*Math.PI);
                     bgCtx.fillStyle = `rgba(${r}, ${g}, ${b}, 1.0)`; bgCtx.fill();
-                    
                     bgCtx.beginPath(); bgCtx.arc(cigLength/2, 0, 10 + 8 * cigEmberGlow, 0, 2*Math.PI);
                     bgCtx.fillStyle = `rgba(${r}, ${g}, ${b}, ${0.3 * cigEmberGlow})`; bgCtx.fill();
-                    
                     bgCtx.restore();
                 }
             }
             bgCtx.restore();
         }
 
-        // ==========================================
-        // BAŞLATMA VE YZ (AI) YÜKLEMESİ
-        // ==========================================
         const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-        hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
+        hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
         hands.onResults((r) => { handsData = r.multiHandLandmarks; });
 
+        // ÇÖZÜM BURADA: refineLandmarks kapatıldı.
         const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
-        faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
+        faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: false, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
         faceMesh.onResults((r) => { faceData = r.multiFaceLandmarks; });
 
         async function startApp(mode) {
@@ -445,13 +406,18 @@
                 videoElement.srcObject = stream;
                 await videoElement.play();
                 
+                // ÇÖZÜM BURADA: Promise.all kaldırıldı, YZ'ler sırayla (sequential) çalışıyor.
                 async function processAI() {
                     if (videoElement.readyState >= 2) {
-                        if (currentMode === 3) {
-                            // Sigara modunda hem El hem Yüz yapay zekası aynı anda çalışır
-                            await Promise.all([ hands.send({image: videoElement}), faceMesh.send({image: videoElement}) ]);
-                        } else {
-                            await hands.send({image: videoElement});
+                        try {
+                            if (currentMode === 3) {
+                                await faceMesh.send({image: videoElement});
+                                await hands.send({image: videoElement});
+                            } else {
+                                await hands.send({image: videoElement});
+                            }
+                        } catch (err) {
+                            console.error("Yapay Zeka İşleme Hatası:", err);
                         }
                     }
                     requestAnimationFrame(processAI);
